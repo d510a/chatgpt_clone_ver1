@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ─ %(message)s")
 
-documents_folder: Final[Path] = Path.home() / "Documents"
+documents_folder: Final[Path] = Path.home() / "C:\Users\J0232073\Documents"
 config_file: Final[Path] = documents_folder / "proxy_config.json"
 
 username = password = api_key = ""
