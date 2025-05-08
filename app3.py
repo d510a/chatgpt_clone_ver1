@@ -15,12 +15,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ─ %(
 username = password = api_key = proxy_host = ""
 
 # ❶ Streamlit Secrets（Cloud 環境）
-if "api_key" in st.secrets:                   # secrets.toml / Settings → Secrets
+if "api_key" in st.secrets:
     api_key    = st.secrets["api_key"]
     username   = st.secrets.get("proxy_username", "")
     password   = st.secrets.get("proxy_password", "")
     proxy_host = st.secrets.get("proxy_host", "proxy01.hm.jp.honda.com:8080")
-# ❷ ローカルの proxy_config.json
+# ❷ ローカル proxy_config.json
 else:
     documents_folder: Final[Path] = Path.home() / "Documents"
     config_file:     Final[Path] = documents_folder / "proxy_config.json"
@@ -44,7 +44,7 @@ proxy_url = (f"http://{username}:{password}@{proxy_host}"
 # ------------------------------------------------ 1) ページ設定
 st.set_page_config(page_title="ChatGPT_clone")
 
-if not api_key:                # API キーが無い場合のみ停止
+if not api_key:
     st.error("API キーが設定されていません。（Secrets または proxy_config.json）")
     st.stop()
 
@@ -89,7 +89,7 @@ class OpenAIWrapper:
 def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper":
     wrapper = OpenAIWrapper(api_key, proxy_url)
     try:
-        wrapper.list_models()             # 接続チェック
+        wrapper.list_models()
         logging.info("Connectivity OK via %s", "proxy" if proxy_url else "direct")
         return wrapper
     except Exception:
@@ -183,18 +183,18 @@ def extract_text_from_pdf(file_obj) -> str:
 if uploaded_file:
     st.sidebar.write(f" **{uploaded_file.name}** ({uploaded_file.size//1024:,} KB) を読み込みました")
     if uploaded_file.name not in st.session_state.uploaded_files:
-        content = extract_text_from_pdf(uploaded_file) if uploaded_file.type == "application/pdf" else read_text_file(uploaded_file)
+        content = (extract_text_from_pdf(uploaded_file)
+                   if uploaded_file.type == "application/pdf"
+                   else read_text_file(uploaded_file))
         st.session_state.uploaded_files[uploaded_file.name] = content
-    if st.sidebar.button("チャットに送信"):
+
+    # 送信ボタン（1つだけ）
+    if st.sidebar.button("ファイル内容を送信"):
         txt = st.session_state.uploaded_files[uploaded_file.name]
-        # ---- ここから改修 ----
-        # ① 抽出テキストを system で隠す
-        st.session_state.messages.append({"role": "system", "content": txt})
-        # ② ユーザーには通知だけ
-        user_notice = f"ファイル **{uploaded_file.name}** を送信しました。（内容は非表示）"
-        st.session_state.messages.append({"role": "user", "content": user_notice})
+        st.session_state.messages.append({"role": "system", "content": txt})  # 非表示で追加
+        notice = f"ファイル **{uploaded_file.name}** を送信しました。（内容は非表示）"
+        st.session_state.messages.append({"role": "user", "content": notice})
         st.sidebar.success("ファイルを非表示でチャットへ送信しました")
-        # ---- ここまで改修 ----
 
 # ------------------------------------------------ 6) メッセージ描画
 st.title("ChatGPT_clone_o3")
