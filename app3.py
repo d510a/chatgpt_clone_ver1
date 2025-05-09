@@ -1,4 +1,4 @@
-# app3.py
+# app3.py (修正版)
 
 import os
 import json
@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Final
 
 import streamlit as st
+from streamlit.errors import StreamlitAPIException  # 追加: 例外捕捉用
 from dotenv import load_dotenv
 from docx import Document               # Word(.docx)対応
 import mammoth                          # .doc 対応
-import docx2txt                        # .docx 抽出フォールバック
+import docx2txt                         # .docx 抽出フォールバック
 
 # -------------------------- 0) 共通設定 --------------------------
 load_dotenv()
@@ -59,6 +60,7 @@ if not api_key:
     st.stop()
 
 # -------------------------- 2) OpenAI v0/v1 互換ラッパー --------------
+
 def detect_openai_v1() -> bool:
     try:
         return int(imd.version("openai").split(".")[0]) >= 1
@@ -70,6 +72,7 @@ if _IS_V1:
     from openai import OpenAI
 else:
     import openai as _openai_legacy  # noqa: F401
+
 
 class OpenAIWrapper:
     def __init__(self, api_key: str, proxy_url: str | None):
@@ -94,6 +97,7 @@ class OpenAIWrapper:
             return self.client.chat.completions.create(model=model, messages=messages, stream=True)
         return self.client.ChatCompletion.create(model=model, messages=messages, stream=True)
 
+
 def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper":
     wrapper = OpenAIWrapper(api_key, proxy_url)
     try:
@@ -105,7 +109,8 @@ def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper
             raise
         return OpenAIWrapper(api_key, None)
 
-client = create_openai_wrapper(api_key, proxy_url)
+
+aiclient = create_openai_wrapper(api_key, proxy_url)
 
 # -------------------------- 3) ポータブル資産パス ---------------------
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -121,12 +126,28 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
 st.session_state.setdefault("uploaded_files", {})
 
 # -------------------------- 5) ファイル添付 & テキスト抽出 -------------
+ALLOWED_EXTS = ["txt", "md", "pdf", "docx", "doc"]
+
 st.sidebar.header("ファイルを添付")
-uploaded_file = st.sidebar.file_uploader(
-    "テキスト / Markdown / PDF / Word",
-    type=["txt", "md", "pdf", "docx", "doc"],
-    accept_multiple_files=False
-)
+
+# 初回の deserializer エラー回避用 try/except
+try:
+    uploaded_file = st.sidebar.file_uploader(
+        "テキスト / Markdown / PDF / Word",
+        type=ALLOWED_EXTS,
+        accept_multiple_files=False,
+        key="file_uploader",
+    )
+except StreamlitAPIException:
+    # セッションに古いファイルが残っていて type が変わった場合などに発生する
+    st.session_state.pop("file_uploader", None)
+    uploaded_file = st.sidebar.file_uploader(
+        "テキスト / Markdown / PDF / Word",
+        type=ALLOWED_EXTS,
+        accept_multiple_files=False,
+        key="file_uploader",
+    )
+
 
 def read_text_file(file) -> str:
     raw = file.read()
@@ -137,103 +158,58 @@ def read_text_file(file) -> str:
             continue
     return raw.decode(errors="ignore")[:180_000]
 
+
 def extract_text_from_pdf(file_obj) -> str:
     data = file_obj.read(); bio = BytesIO(data)
     try:
         from pdfminer.high_level import extract_text
         text = extract_text(bio)
-        if text.strip(): return text[:180_000]
-    except: pass
+        if text.strip():
+            return text[:180_000]
+    except:  # noqa: E722
+        pass
     try:
         import PyPDF2
         reader = PyPDF2.PdfReader(BytesIO(data))
         text = "\n".join(p.extract_text() or "" for p in reader.pages)
-        if text.strip(): return text[:180_000]
-    except: pass
+        if text.strip():
+            return text[:180_000]
+    except:  # noqa: E722
+        pass
     try:
         import fitz
         doc = fitz.open(stream=data, filetype="pdf")
         text = "\n".join(p.get_text() for p in doc)
-        if text.strip(): return text[:180_000]
-    except: pass
+        if text.strip():
+            return text[:180_000]
+    except:  # noqa: E722
+        pass
     try:
         from pdf2image import convert_from_bytes
         import pytesseract
         pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
         pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
         ocr = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
-        if ocr.strip(): return ocr[:180_000]
-    except: pass
+        if ocr.strip():
+            return ocr[:180_000]
+    except:  # noqa: E722
+        pass
     return "(PDF からテキストを抽出できませんでした)"
+
 
 def extract_text_from_docx(file_obj) -> str:
     data = file_obj.read(); bio = BytesIO(data)
     try:
         doc = Document(bio)
         return "\n".join(p.text for p in doc.paragraphs)[:180_000]
-    except: pass
+    except:  # noqa: E722
+        pass
     try:
         return docx2txt.process(bio)[:180_000]
-    except: pass
+    except:  # noqa: E722
+        pass
     return "(Word(.docx) から抽出できませんでした)"
 
+
 def extract_text_from_doc(file_obj) -> str:
-    data = file_obj.read(); bio = BytesIO(data)
-    try:
-        result = mammoth.extract_raw_text(bio)
-        return result.value[:180_000]
-    except: pass
-    return "(.doc から抽出できませんでした)"
-
-if uploaded_file:
-    st.sidebar.write(f" **{uploaded_file.name}** を読み込みました")
-    if uploaded_file.name not in st.session_state.uploaded_files:
-        ext = Path(uploaded_file.name).suffix.lower()[1:]
-        if ext == "pdf":
-            content = extract_text_from_pdf(uploaded_file)
-        elif ext == "docx":
-            content = extract_text_from_docx(uploaded_file)
-        elif ext == "doc":
-            content = extract_text_from_doc(uploaded_file)
-        else:
-            content = read_text_file(uploaded_file)
-        st.session_state.uploaded_files[uploaded_file.name] = content
-
-    if st.sidebar.button("ファイル内容を送信"):
-        txt = st.session_state.uploaded_files[uploaded_file.name]
-        st.session_state.messages.append({"role": "system", "content": txt})
-        notice = f"ファイル **{uploaded_file.name}** を送信しました。"
-        st.session_state.messages.append({"role": "user", "content": notice})
-        st.sidebar.success("ファイルをチャットへ送信しました")
-
-# -------------------------- 6) メッセージ描画 --------------------------
-st.title("ChatGPT_clone_o3")
-for m in st.session_state.messages:
-    if m["role"] == "system":
-        continue
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-# -------------------------- 7) チャット入力 --------------------------
-if prompt := st.chat_input("ここにメッセージを入力"):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="o3-2025-04-16"
-    )
-    with st.chat_message("assistant"):
-        placeholder, reply = st.empty(), ""
-        for chunk in stream:
-            delta = (
-                chunk.choices[0].delta
-                if hasattr(chunk.choices[0], "delta")
-                else chunk.choices[0]
-            )
-            reply += (
-                delta.get("content", "")
-                if isinstance(delta, dict)
-                else delta.content or ""
-            )
-            placeholder.markdown(reply + "▌")
-        placeholder.markdown(reply)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    data = file
