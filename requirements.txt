@@ -1,11 +1,12 @@
-# requirements.txt
 streamlit
 openai
-python-docx
+python-dotenv
 pdfminer.six
 PyPDF2
 PyMuPDF
 pdf2image
 pillow
 pytesseract
-python-dotenv
+python-docx
+mammoth
+docx2txt
