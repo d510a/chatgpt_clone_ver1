@@ -1,4 +1,3 @@
-
 import os, json, logging, sys, importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
@@ -6,6 +5,7 @@ from typing import Final
 
 import streamlit as st
 from dotenv import load_dotenv
+from docx import Document  # 追加: Word(.docx)対応
 
 # ------------------------------------------------ 0) 共通設定
 load_dotenv()
@@ -112,10 +112,13 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
 st.session_state.setdefault("uploaded_files", {})
 
-# ------------------------------------------------ 5) ファイル添付 & PDF 抽出
+# ------------------------------------------------ 5) ファイル添付 & PDF/DOCX 抽出
 st.sidebar.header("ファイルを添付")
-uploaded_file = st.sidebar.file_uploader("テキスト / Markdown / PDF",
-                                         type=["txt", "md", "pdf"], accept_multiple_files=False)
+uploaded_file = st.sidebar.file_uploader(
+    "テキスト / Markdown / PDF / Word",
+    type=["txt", "md", "pdf", "docx"], accept_multiple_files=False
+)
+
 
 def read_text_file(file):
     raw = file.read()
@@ -126,12 +129,14 @@ def read_text_file(file):
             continue
     return raw.decode(errors="ignore")[:180_000]
 
+
 def looks_garbled(text: str) -> bool:
     """(cid:123),  , U+FFFD を 10 % 以上含む場合は文字化けと判定"""
     if not text:
         return True
     bad = text.count(" ") + text.count("\ufffd") + text.count("(cid:")
     return (bad / len(text)) > 0.10
+
 
 def extract_text_from_pdf(file_obj) -> str:
     data = file_obj.read()
@@ -180,12 +185,28 @@ def extract_text_from_pdf(file_obj) -> str:
 
     return "(PDF からテキストを抽出できませんでした)"
 
+
+def extract_text_from_docx(file_obj) -> str:
+    data = file_obj.read()
+    bio = BytesIO(data)
+    try:
+        doc = Document(bio)
+        text = "\n".join([p.text for p in doc.paragraphs])
+        return text[:180_000]
+    except Exception as e:
+        logging.warning("docx extraction 失敗: %s", e)
+        return "(Wordファイルからテキストを抽出できませんでした)"
+
 if uploaded_file:
     st.sidebar.write(f" **{uploaded_file.name}** ({uploaded_file.size//1024:,} KB) を読み込みました")
     if uploaded_file.name not in st.session_state.uploaded_files:
-        content = (extract_text_from_pdf(uploaded_file)
-                   if uploaded_file.type == "application/pdf"
-                   else read_text_file(uploaded_file))
+        ext = Path(uploaded_file.name).suffix.lower()
+        if ext == ".pdf":
+            content = extract_text_from_pdf(uploaded_file)
+        elif ext == ".docx":
+            content = extract_text_from_docx(uploaded_file)
+        else:
+            content = read_text_file(uploaded_file)
         st.session_state.uploaded_files[uploaded_file.name] = content
 
     # 送信ボタン（1つだけ）
@@ -226,6 +247,6 @@ if prompt := st.chat_input("ここにメッセージを入力"):
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
 # ------------------------------------------------ 依存パッケージ例
-# pip install streamlit openai python-dotenv pdfminer.six PyPDF2 PyMuPDF
+# pip install streamlit openai python-dotenv pdfminer.six PyPDF2 PyMuPDF python-docx
 # pip install pdf2image pillow pytesseract
 # poppler / tesseract-ocr 実行ファイルを --add-data で同梱
