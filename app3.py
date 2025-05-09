@@ -1,4 +1,4 @@
-# app3.py (最終修正版)
+# app3.py – fully corrected
 
 import os
 import json
@@ -12,54 +12,55 @@ from typing import Final
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 from dotenv import load_dotenv
-from docx import Document               # Word(.docx)対応
-import mammoth                          # .doc 対応
-import docx2txt                         # .docx 抽出フォールバック
+from docx import Document           # .docx support
+import mammoth                      # .doc support
+import docx2txt                     # .docx fallback
 
-# -------------------------- 0) 共通設定 --------------------------
+# ------------------------- 0) Common settings -------------------------
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ─ %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s ─ %(message)s",
+)
 
-# --- 0-1) 認証情報読み込み ----------------------------------------
+# --- 0‑1) load credentials -------------------------------------------
 username = password = api_key = proxy_host = ""
 
-# ❶ Streamlit Secrets（Cloud 環境）
-if "api_key" in st.secrets:
-    api_key    = st.secrets["api_key"]
-    username   = st.secrets.get("proxy_username", "")
-    password   = st.secrets.get("proxy_password", "")
+if "api_key" in st.secrets:  # ❶ Cloud secrets
+    api_key = st.secrets["api_key"]
+    username = st.secrets.get("proxy_username", "")
+    password = st.secrets.get("proxy_password", "")
     proxy_host = st.secrets.get("proxy_host", "proxy01.hm.jp.honda.com:8080")
-# ❷ ローカル proxy_config.json
-else:
+else:  # ❷ local proxy_config.json
     documents_folder: Final[Path] = Path.home() / "Documents"
-    config_file:     Final[Path] = documents_folder / "proxy_config.json"
+    config_file: Final[Path] = documents_folder / "proxy_config.json"
     if config_file.exists():
         try:
             with config_file.open(encoding="utf-8") as f:
-                cfg        = json.load(f)
-                api_key    = cfg.get("apikey", "")
-                username   = cfg.get("username", "")
-                password   = cfg.get("password", "")
+                cfg = json.load(f)
+                api_key = cfg.get("apikey", "")
+                username = cfg.get("username", "")
+                password = cfg.get("password", "")
                 proxy_host = cfg.get("proxyhost", "proxy01.hm.jp.honda.com:8080")
         except Exception as e:
-            logging.warning("proxy_config.json の読み込みに失敗: %s", e)
+            logging.warning("proxy_config.json read failed: %s", e)
     else:
-        logging.info("proxy_config.json が見つかりません: %s", config_file)
+        logging.info("proxy_config.json not found: %s", config_file)
 
-# --- 0-2) プロキシ URL 組立 ---------------------------------------
+# --- 0‑2) build proxy url -------------------------------------------
 proxy_url = (
     f"http://{username}:{password}@{proxy_host}"
     if username and password and proxy_host
     else None
 )
 
-# -------------------------- 1) ページ設定 --------------------------
+# ------------------------- 1) page config ----------------------------
 st.set_page_config(page_title="ChatGPT_clone")
 if not api_key:
     st.error("API キーが設定されていません。（Secrets または proxy_config.json）")
     st.stop()
 
-# -------------------------- 2) OpenAI v0/v1 互換ラッパー --------------
+# ------------------------- 2) OpenAI wrapper -------------------------
 
 def detect_openai_v1() -> bool:
     try:
@@ -75,13 +76,17 @@ else:
 
 
 class OpenAIWrapper:
+    """Unifies v0 / v1 client interfaces."""
+
     def __init__(self, api_key: str, proxy_url: str | None):
         self.v1 = _IS_V1
+        # proxy env
         if proxy_url:
             os.environ["HTTP_PROXY"] = os.environ["HTTPS_PROXY"] = proxy_url
         else:
             os.environ.pop("HTTP_PROXY", None)
             os.environ.pop("HTTPS_PROXY", None)
+        # client
         if self.v1:
             self.client = OpenAI(api_key=api_key)
         else:
@@ -92,10 +97,14 @@ class OpenAIWrapper:
     def list_models(self):
         return self.client.models.list() if self.v1 else self.client.Model.list()
 
-    def stream_chat_completion(self, messages, model="o3-2025-04-16"):
+    def stream_chat_completion(self, messages, model: str = "o3-2025-04-16"):
         if self.v1:
-            return self.client.chat.completions.create(model=model, messages=messages, stream=True)
-        return self.client.ChatCompletion.create(model=model, messages=messages, stream=True)
+            return self.client.chat.completions.create(
+                model=model, messages=messages, stream=True
+            )
+        return self.client.ChatCompletion.create(
+            model=model, messages=messages, stream=True
+        )
 
 
 def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper":
@@ -106,32 +115,35 @@ def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper
         return wrapper
     except Exception:
         if proxy_url is None:
-            raise
-        return OpenAIWrapper(api_key, None)
+            raise  # already direct, bubble up
+        return OpenAIWrapper(api_key, None)  # retry without proxy
 
 
-# 正しい変数名 client で保持（ここがバグポイントでした）
 client = create_openai_wrapper(api_key, proxy_url)
 
-# -------------------------- 3) ポータブル資産パス ---------------------
+# ------------------------- 3) resources paths ------------------------
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-POPPLER_DIR   = BASE_DIR / "poppler" / "bin"
+POPPLER_DIR = BASE_DIR / "poppler" / "bin"
 TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
 
-# -------------------------- 4) セッション初期化 -----------------------
+# ------------------------- 4) session init ---------------------------
 GREETING = "質問してみましょう"
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
-if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.session_state.messages):
+    st.session_state.messages = [
+        {"role": "system", "content": "You are a helpful assistant."}
+    ]
+if not any(
+    m["role"] == "assistant" and m["content"] == GREETING
+    for m in st.session_state.messages
+):
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
+
 st.session_state.setdefault("uploaded_files", {})
 
-# -------------------------- 5) ファイル添付 & テキスト抽出 -------------
+# ------------------------- 5) file upload & extraction ---------------
 ALLOWED_EXTS = ["txt", "md", "pdf", "docx", "doc"]
 
 st.sidebar.header("ファイルを添付")
-
-# 初回の deserializer エラー回避用 try/except
 try:
     uploaded_file = st.sidebar.file_uploader(
         "テキスト / Markdown / PDF / Word",
@@ -140,6 +152,7 @@ try:
         key="file_uploader",
     )
 except StreamlitAPIException:
+    # stale session key → reset and retry
     st.session_state.pop("file_uploader", None)
     uploaded_file = st.sidebar.file_uploader(
         "テキスト / Markdown / PDF / Word",
@@ -160,46 +173,85 @@ def read_text_file(file) -> str:
 
 
 def extract_text_from_pdf(file_obj) -> str:
-    data = file_obj.read(); bio = BytesIO(data)
+    data = file_obj.read()
+    bio = BytesIO(data)
+    # 1) pdfminer
     try:
         from pdfminer.high_level import extract_text
+
         text = extract_text(bio)
         if text.strip():
             return text[:180_000]
-    except:  # noqa: E722
+    except Exception:
         pass
+    # 2) PyPDF2
     try:
         import PyPDF2
+
         reader = PyPDF2.PdfReader(BytesIO(data))
-        text = "\n".join(p.extract_text() or "" for p in reader.pages)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
         if text.strip():
             return text[:180_000]
-    except:  # noqa: E722
+    except Exception:
         pass
+    # 3) PyMuPDF
     try:
         import fitz
+
         doc = fitz.open(stream=data, filetype="pdf")
-        text = "\n".join(p.get_text() for p in doc)
+        text = "\n".join(page.get_text() for page in doc)
         if text.strip():
             return text[:180_000]
-    except:  # noqa: E722
+    except Exception:
         pass
+    # 4) OCR
     try:
         from pdf2image import convert_from_bytes
         import pytesseract
+
         pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
         pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
-        ocr = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
-        if ocr.strip():
-            return ocr[:180_000]
-    except:  # noqa: E722
+        ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
+        if ocr_text.strip():
+            return ocr_text[:180_000]
+    except Exception:
         pass
     return "(PDF からテキストを抽出できませんでした)"
 
 
 def extract_text_from_docx(file_obj) -> str:
-    data = file_obj.read(); bio = BytesIO(data)
+    data = file_obj.read()
+    bio = BytesIO(data)
     try:
         doc = Document(bio)
-        return "\n".join(p.text for p in doc.paragraphs)[:180_000]
-    except:  # noqa
+        text = "\n".join(p.text for p in doc.paragraphs)
+        return text[:180_000]
+    except Exception:
+        pass
+    try:
+        text = docx2txt.process(bio)
+        return text[:180_000]
+    except Exception:
+        pass
+    return "(Word(.docx) から抽出できませんでした)"
+
+
+def extract_text_from_doc(file_obj) -> str:
+    data = file_obj.read()
+    bio = BytesIO(data)
+    try:
+        result = mammoth.extract_raw_text(bio)
+        return result.value[:180_000]
+    except Exception:
+        pass
+    return "(.doc から抽出できませんでした)"
+
+
+if uploaded_file:
+    st.sidebar.write(f" **{uploaded_file.name}** を読み込みました")
+    if uploaded_file.name not in st.session_state.uploaded_files:
+        ext = Path(uploaded_file.name).suffix.lower()
+        if ext == ".pdf":
+            content = extract_text_from_pdf(uploaded_file)
+        elif ext == ".docx":
+            content = extract_text
