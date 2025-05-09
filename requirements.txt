@@ -1,4 +1,11 @@
-streamlit==1.45.0
-openai==1.77.0
-python-dotenv==1.1.0
-PyPDF2==3.0.1
+# requirements.txt
+streamlit
+openai
+python-docx
+pdfminer.six
+PyPDF2
+PyMuPDF
+pdf2image
+pillow
+pytesseract
+python-dotenv
