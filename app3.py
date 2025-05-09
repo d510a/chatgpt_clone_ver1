@@ -1,4 +1,4 @@
-# ===== app8.py – Secrets 対応版 (PDF 抽出強化 & v0/v1 互換ラッパー) =====
+
 import os, json, logging, sys, importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
@@ -192,9 +192,9 @@ if uploaded_file:
     if st.sidebar.button("ファイル内容を送信"):
         txt = st.session_state.uploaded_files[uploaded_file.name]
         st.session_state.messages.append({"role": "system", "content": txt})  # 非表示で追加
-        notice = f"ファイル **{uploaded_file.name}** を送信しました。（内容は非表示）"
+        notice = f"ファイル **{uploaded_file.name}** を送信しました。"
         st.session_state.messages.append({"role": "user", "content": notice})
-        st.sidebar.success("ファイルを非表示でチャットへ送信しました")
+        st.sidebar.success("ファイルをチャットへ送信しました")
 
 # ------------------------------------------------ 6) メッセージ描画
 st.title("ChatGPT_clone_o3")
