@@ -1,3 +1,4 @@
+# app3.py
 import os, json, logging, sys, importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
@@ -5,7 +6,9 @@ from typing import Final
 
 import streamlit as st
 from dotenv import load_dotenv
-from docx import Document  # 追加: Word(.docx)対応
+from docx import Document            # Word(.docx)対応
+import mammoth                       # .doc 対応
+import docx2txt                     # .docx代替抽出
 
 # ------------------------------------------------ 0) 共通設定
 load_dotenv()
@@ -64,13 +67,11 @@ else:
 class OpenAIWrapper:
     def __init__(self, api_key: str, proxy_url: str | None):
         self.v1 = _IS_V1
-        # プロキシ設定
         if proxy_url:
             os.environ["HTTP_PROXY"] = os.environ["HTTPS_PROXY"] = proxy_url
         else:
             os.environ.pop("HTTP_PROXY", None)
             os.environ.pop("HTTPS_PROXY", None)
-        # クライアント生成
         if self.v1:
             self.client = OpenAI(api_key=api_key)
         else:
@@ -112,11 +113,11 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
 st.session_state.setdefault("uploaded_files", {})
 
-# ------------------------------------------------ 5) ファイル添付 & PDF/DOCX 抽出
+# ------------------------------------------------ 5) ファイル添付 & 抽出
 st.sidebar.header("ファイルを添付")
 uploaded_file = st.sidebar.file_uploader(
     "テキスト / Markdown / PDF / Word",
-    type=["txt", "md", "pdf", "docx"], accept_multiple_files=False
+    type=["txt", "md", "pdf", "docx", "doc"], accept_multiple_files=False
 )
 
 
@@ -129,124 +130,94 @@ def read_text_file(file):
             continue
     return raw.decode(errors="ignore")[:180_000]
 
-
-def looks_garbled(text: str) -> bool:
-    """(cid:123),  , U+FFFD を 10 % 以上含む場合は文字化けと判定"""
-    if not text:
-        return True
-    bad = text.count(" ") + text.count("\ufffd") + text.count("(cid:")
-    return (bad / len(text)) > 0.10
-
-
 def extract_text_from_pdf(file_obj) -> str:
-    data = file_obj.read()
-    bio  = BytesIO(data)
-
-    # 1) pdfminer.six
+    data = file_obj.read(); bio = BytesIO(data)
     try:
         from pdfminer.high_level import extract_text
         text = extract_text(bio)
-        if text.strip() and not looks_garbled(text):
-            return text[:180_000]
-    except Exception as e:
-        logging.warning("pdfminer 失敗: %s", e)
-
-    # 2) PyPDF2
+        if text.strip(): return text[:180_000]
+    except: pass
     try:
         import PyPDF2
         reader = PyPDF2.PdfReader(BytesIO(data))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        if text.strip() and not looks_garbled(text):
-            return text[:180_000]
-    except Exception as e:
-        logging.warning("PyPDF2 失敗: %s", e)
-
-    # 3) PyMuPDF
+        text = "\n".join(p.extract_text() or "" for p in reader.pages)
+        if text.strip(): return text[:180_000]
+    except: pass
     try:
         import fitz
         doc = fitz.open(stream=data, filetype="pdf")
-        text = "\n".join(page.get_text() for page in doc)
-        if text.strip() and not looks_garbled(text):
-            return text[:180_000]
-    except Exception as e:
-        logging.warning("PyMuPDF 失敗: %s", e)
-
-    # 4) OCR – Poppler + Tesseract
+        text = "\n".join(p.get_text() for p in doc)
+        if text.strip(): return text[:180_000]
+    except: pass
     try:
-        from pdf2image import convert_from_bytes
-        import pytesseract
+        from pdf2image import convert_from_bytes; import pytesseract
         pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
         pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
-        ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
-        if ocr_text.strip():
-            return ocr_text[:180_000]
-    except Exception as e:
-        logging.warning("OCR 失敗: %s", e)
-
+        ocr = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
+        if ocr.strip(): return ocr[:180_000]
+    except: pass
     return "(PDF からテキストを抽出できませんでした)"
 
-
 def extract_text_from_docx(file_obj) -> str:
-    data = file_obj.read()
-    bio = BytesIO(data)
+    data = file_obj.read(); bio = BytesIO(data)
     try:
         doc = Document(bio)
-        text = "\n".join([p.text for p in doc.paragraphs])
+        return "\n".join([p.text for p in doc.paragraphs])[:180_000]
+    except: pass
+    try:
+        text = docx2txt.process(bio)
         return text[:180_000]
-    except Exception as e:
-        logging.warning("docx extraction 失敗: %s", e)
-        return "(Wordファイルからテキストを抽出できませんでした)"
+    except: pass
+    return "(Word(.docx) から抽出できませんでした)"
+
+def extract_text_from_doc(file_obj) -> str:
+    data = file_obj.read(); bio = BytesIO(data)
+    try:
+        result = mammoth.extract_raw_text(bio)
+        return result.value[:180_000]
+    except: pass
+    return "(.doc から抽出できませんでした)"
 
 if uploaded_file:
-    st.sidebar.write(f" **{uploaded_file.name}** ({uploaded_file.size//1024:,} KB) を読み込みました")
+    st.sidebar.write(f" **{uploaded_file.name}** を読み込みました")
     if uploaded_file.name not in st.session_state.uploaded_files:
-        ext = Path(uploaded_file.name).suffix.lower()
-        if ext == ".pdf":
+        ext = Path(uploaded_file.name).suffix.lower()[1:]
+        if ext == "pdf":
             content = extract_text_from_pdf(uploaded_file)
-        elif ext == ".docx":
+        elif ext == "docx":
             content = extract_text_from_docx(uploaded_file)
+        elif ext == "doc":
+            content = extract_text_from_doc(uploaded_file)
         else:
             content = read_text_file(uploaded_file)
         st.session_state.uploaded_files[uploaded_file.name] = content
 
-    # 送信ボタン（1つだけ）
     if st.sidebar.button("ファイル内容を送信"):
         txt = st.session_state.uploaded_files[uploaded_file.name]
-        st.session_state.messages.append({"role": "system", "content": txt})  # 非表示で追加
+        st.session_state.messages.append({"role": "system", "content": txt})
         notice = f"ファイル **{uploaded_file.name}** を送信しました。"
         st.session_state.messages.append({"role": "user", "content": notice})
         st.sidebar.success("ファイルをチャットへ送信しました")
 
 # ------------------------------------------------ 6) メッセージ描画
 st.title("ChatGPT_clone_o3")
-st.caption("Streamlit + OpenAI (v0/v1 互換)")
-
 for m in st.session_state.messages:
-    if m["role"] == "system":
-        continue
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+    if m["role"] == "system": continue
+    with st.chat_message(m["role"]): st.markdown(m["content"])
 
 # ------------------------------------------------ 7) チャット入力
 if prompt := st.chat_input("ここにメッセージを入力"):
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="o3-2025-04-16"
-    )
-
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role":"user","content":prompt})
+    stream = client.stream_chat_completion(messages=st.session_state.messages, model="o3-2025-04-16")
     with st.chat_message("assistant"):
         placeholder, reply = st.empty(), ""
         for chunk in stream:
-            delta = chunk.choices[0].delta if hasattr(chunk.choices[0], "delta") else chunk.choices[0]
-            reply += (delta.get("content", "") if isinstance(delta, dict) else delta.content or "")
+            delta = chunk.choices[0].delta if hasattr(chunk.choices[0],"delta") else chunk.choices[0]
+            reply += delta.get("content", "") if isinstance(delta, dict) else delta.content or ""
             placeholder.markdown(reply + "▌")
         placeholder.markdown(reply)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.session_state.messages.append({"role":"assistant","content":reply})
 
-# ------------------------------------------------ 依存パッケージ例
-# pip install streamlit openai python-dotenv pdfminer.six PyPDF2 PyMuPDF python-docx
-# pip install pdf2image pillow pytesseract
-# poppler / tesseract-ocr 実行ファイルを --add-data で同梱
+# ------------------------------------------------ requirements.txt
+# streamlit openai python-dotenv pdfminer.six PyPDF2 PyMuPDF pdf2image pillow pytesseract python-docx mammoth docx2txt
