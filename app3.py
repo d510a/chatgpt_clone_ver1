@@ -88,38 +88,113 @@ st.session_state.setdefault("uploaded_files", {})
 
 # --- ファイル添付 & 抽出 -------------------------------------------
 st.sidebar.header("ファイルを添付")
-# 全ファイル受け入れ
 uploaded_file = st.sidebar.file_uploader(
-    "テキスト / PDF / Word", type=None, accept_multiple_files=False
+    "テキスト / PDF / Word", type=["txt", "md", "pdf", "docx", "doc"], accept_multiple_files=False
 )
 
-allowed_exts = (".txt", ".md", ".pdf", ".docx", ".doc")
+# 大文字 .PDF を非対応扱い
+if uploaded_file and uploaded_file.name.endswith(".PDF"):
+    st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
+else:
+    def read_text_file(file):
+        raw = file.read()
+        for enc in ("utf-8", "cp932"):
+            try:
+                return raw.decode(enc, errors="ignore")[:180_000]
+            except UnicodeDecodeError:
+                continue
+        return raw.decode(errors="ignore")[:180_000]
 
-if uploaded_file:
-    fname = uploaded_file.name
-    # 手動で拡張子チェック（小文字化して判定）
-    if not fname.lower().endswith(allowed_exts):
-        # 対応外ファイルはエラー表示
-        st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
-    else:
-        st.sidebar.write(f" **{fname}** ({uploaded_file.size//1024:,} KB) を読み込みました")
-        # ファイル内容の抽出
-        if fname.lower().endswith(".pdf"):
-            content = extract_text_from_pdf(uploaded_file)
-        elif fname.lower().endswith((".docx", ".doc")):
-            content = extract_text_from_word(uploaded_file)
-        else:
-            content = read_text_file(uploaded_file)
+    def looks_garbled(text: str) -> bool:
+        if not text:
+            return True
+        bad = text.count(" ") + text.count("\ufffd") + text.count("(cid:")
+        return (bad / len(text)) > 0.10
 
-        # 一度だけ保持
-        if fname not in st.session_state.uploaded_files:
-            st.session_state.uploaded_files[fname] = content
+    def extract_text_from_pdf(file_obj) -> str:
+        data = file_obj.read()
+        bio = BytesIO(data)
 
-        # 送信ボタン表示
+        # 1) pdfminer.six
+        try:
+            from pdfminer.high_level import extract_text
+            text = extract_text(bio)
+            if text.strip() and not looks_garbled(text):
+                return text[:180_000]
+        except Exception as e:
+            logging.warning("pdfminer 失敗: %s", e)
+
+        # 2) PyPDF2
+        try:
+            import PyPDF2
+            reader = PyPDF2.PdfReader(BytesIO(data))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            if text.strip() and not looks_garbled(text):
+                return text[:180_000]
+        except Exception as e:
+            logging.warning("PyPDF2 失敗: %s", e)
+
+        # 3) PyMuPDF
+        try:
+            import fitz
+            doc = fitz.open(stream=data, filetype="pdf")
+            text = "\n".join(page.get_text() for page in doc)
+            if text.strip() and not looks_garbled(text):
+                return text[:180_000]
+        except Exception as e:
+            logging.warning("PyMuPDF 失敗: %s", e)
+
+        # 4) OCR – Poppler + Tesseract
+        try:
+            from pdf2image import convert_from_bytes
+            import pytesseract
+            pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
+            pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
+            ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
+            if ocr_text.strip():
+                return ocr_text[:180_000]
+        except Exception as e:
+            logging.warning("OCR 失敗: %s", e)
+
+        return "(PDF からテキストを抽出できませんでした)"
+
+    def extract_text_from_word(file_obj) -> str:
+        try:
+            file_obj.seek(0)
+            doc = Document(file_obj)
+            text = "\n".join(para.text for para in doc.paragraphs)
+            if text.strip():
+                return text[:180_000]
+        except Exception as e:
+            logging.warning(".docx 解析失敗: %s", e)
+
+        try:
+            import textract
+            file_obj.seek(0)
+            data = file_obj.read()
+            text = textract.process(data, extension="doc").decode(errors="ignore")
+            if text.strip():
+                return text[:180_000]
+        except Exception as e:
+            logging.warning(".doc 解析失敗: %s", e)
+
+        return "(Word ファイルからテキストを抽出できませんでした)"
+
+    if uploaded_file:
+        st.sidebar.write(f" **{uploaded_file.name}** ({uploaded_file.size//1024:,} KB) を読み込みました")
+        if uploaded_file.name not in st.session_state.uploaded_files:
+            if uploaded_file.type == "application/pdf":
+                content = extract_text_from_pdf(uploaded_file)
+            elif uploaded_file.name.lower().endswith((".docx", ".doc")):
+                content = extract_text_from_word(uploaded_file)
+            else:
+                content = read_text_file(uploaded_file)
+            st.session_state.uploaded_files[uploaded_file.name] = content
+
         if st.sidebar.button("ファイル内容を送信"):
-            txt = st.session_state.uploaded_files[fname]
+            txt = st.session_state.uploaded_files[uploaded_file.name]
             st.session_state.messages.append({"role": "system", "content": txt})
-            notice = f"ファイル **{fname}** を送信しました。"
+            notice = f"ファイル **{uploaded_file.name}** を送信しました。"
             st.session_state.messages.append({"role": "user", "content": notice})
             st.sidebar.success("ファイルをチャットへ送信しました")
 
