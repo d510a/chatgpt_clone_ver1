@@ -1,20 +1,25 @@
 # app3.py
-import os, json, logging, sys, importlib.metadata as imd
+
+import os
+import json
+import logging
+import sys
+import importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
 from typing import Final
 
 import streamlit as st
 from dotenv import load_dotenv
-from docx import Document            # Word(.docx)対応
-import mammoth                       # .doc 対応
-import docx2txt                     # .docx代替抽出
+from docx import Document               # Word(.docx)対応
+import mammoth                          # .doc 対応
+import docx2txt                        # .docx 抽出フォールバック
 
-# ------------------------------------------------ 0) 共通設定
+# -------------------------- 0) 共通設定 --------------------------
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ─ %(message)s")
 
-# --- 0-1) 認証情報の読み込み順 -------------------------------------------
+# --- 0-1) 認証情報読み込み ----------------------------------------
 username = password = api_key = proxy_host = ""
 
 # ❶ Streamlit Secrets（Cloud 環境）
@@ -40,18 +45,20 @@ else:
     else:
         logging.info("proxy_config.json が見つかりません: %s", config_file)
 
-# --- 0-2) プロキシ URL を組み立て ----------------------------------------
-proxy_url = (f"http://{username}:{password}@{proxy_host}"
-             if username and password and proxy_host else None)
+# --- 0-2) プロキシ URL 組立 ---------------------------------------
+proxy_url = (
+    f"http://{username}:{password}@{proxy_host}"
+    if username and password and proxy_host
+    else None
+)
 
-# ------------------------------------------------ 1) ページ設定
+# -------------------------- 1) ページ設定 --------------------------
 st.set_page_config(page_title="ChatGPT_clone")
-
 if not api_key:
     st.error("API キーが設定されていません。（Secrets または proxy_config.json）")
     st.stop()
 
-# ------------------------------------------------ 2) OpenAI v0/v1 互換ラッパー
+# -------------------------- 2) OpenAI v0/v1 互換ラッパー --------------
 def detect_openai_v1() -> bool:
     try:
         return int(imd.version("openai").split(".")[0]) >= 1
@@ -100,12 +107,12 @@ def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper
 
 client = create_openai_wrapper(api_key, proxy_url)
 
-# ------------------------------------------------ 3) ポータブル資産パス
+# -------------------------- 3) ポータブル資産パス ---------------------
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-POPPLER_DIR   = BASE_DIR / "poppler"   / "bin"
+POPPLER_DIR   = BASE_DIR / "poppler" / "bin"
 TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
 
-# ------------------------------------------------ 4) セッション初期化
+# -------------------------- 4) セッション初期化 -----------------------
 GREETING = "質問してみましょう"
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
@@ -113,15 +120,15 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
 st.session_state.setdefault("uploaded_files", {})
 
-# ------------------------------------------------ 5) ファイル添付 & 抽出
+# -------------------------- 5) ファイル添付 & テキスト抽出 -------------
 st.sidebar.header("ファイルを添付")
 uploaded_file = st.sidebar.file_uploader(
     "テキスト / Markdown / PDF / Word",
-    type=["txt", "md", "pdf", "docx", "doc"], accept_multiple_files=False
+    type=["txt", "md", "pdf", "docx", "doc"],
+    accept_multiple_files=False
 )
 
-
-def read_text_file(file):
+def read_text_file(file) -> str:
     raw = file.read()
     for enc in ("utf-8", "cp932"):
         try:
@@ -150,7 +157,8 @@ def extract_text_from_pdf(file_obj) -> str:
         if text.strip(): return text[:180_000]
     except: pass
     try:
-        from pdf2image import convert_from_bytes; import pytesseract
+        from pdf2image import convert_from_bytes
+        import pytesseract
         pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
         pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
         ocr = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
@@ -162,11 +170,10 @@ def extract_text_from_docx(file_obj) -> str:
     data = file_obj.read(); bio = BytesIO(data)
     try:
         doc = Document(bio)
-        return "\n".join([p.text for p in doc.paragraphs])[:180_000]
+        return "\n".join(p.text for p in doc.paragraphs)[:180_000]
     except: pass
     try:
-        text = docx2txt.process(bio)
-        return text[:180_000]
+        return docx2txt.process(bio)[:180_000]
     except: pass
     return "(Word(.docx) から抽出できませんでした)"
 
@@ -199,25 +206,34 @@ if uploaded_file:
         st.session_state.messages.append({"role": "user", "content": notice})
         st.sidebar.success("ファイルをチャットへ送信しました")
 
-# ------------------------------------------------ 6) メッセージ描画
+# -------------------------- 6) メッセージ描画 --------------------------
 st.title("ChatGPT_clone_o3")
 for m in st.session_state.messages:
-    if m["role"] == "system": continue
-    with st.chat_message(m["role"]): st.markdown(m["content"])
+    if m["role"] == "system":
+        continue
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-# ------------------------------------------------ 7) チャット入力
+# -------------------------- 7) チャット入力 --------------------------
 if prompt := st.chat_input("ここにメッセージを入力"):
     st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role":"user","content":prompt})
-    stream = client.stream_chat_completion(messages=st.session_state.messages, model="o3-2025-04-16")
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    stream = client.stream_chat_completion(
+        messages=st.session_state.messages, model="o3-2025-04-16"
+    )
     with st.chat_message("assistant"):
         placeholder, reply = st.empty(), ""
         for chunk in stream:
-            delta = chunk.choices[0].delta if hasattr(chunk.choices[0],"delta") else chunk.choices[0]
-            reply += delta.get("content", "") if isinstance(delta, dict) else delta.content or ""
+            delta = (
+                chunk.choices[0].delta
+                if hasattr(chunk.choices[0], "delta")
+                else chunk.choices[0]
+            )
+            reply += (
+                delta.get("content", "")
+                if isinstance(delta, dict)
+                else delta.content or ""
+            )
             placeholder.markdown(reply + "▌")
         placeholder.markdown(reply)
-    st.session_state.messages.append({"role":"assistant","content":reply})
-
-# ------------------------------------------------ requirements.txt
-# streamlit openai python-dotenv pdfminer.six PyPDF2 PyMuPDF pdf2image pillow pytesseract python-docx mammoth docx2txt
+    st.session_state.messages.append({"role": "assistant", "content": reply})
