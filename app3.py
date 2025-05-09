@@ -1,4 +1,4 @@
-# app3.py (修正版)
+# app3.py (最終修正版)
 
 import os
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final
 
 import streamlit as st
-from streamlit.errors import StreamlitAPIException  # 追加: 例外捕捉用
+from streamlit.errors import StreamlitAPIException
 from dotenv import load_dotenv
 from docx import Document               # Word(.docx)対応
 import mammoth                          # .doc 対応
@@ -110,7 +110,8 @@ def create_openai_wrapper(api_key: str, proxy_url: str | None) -> "OpenAIWrapper
         return OpenAIWrapper(api_key, None)
 
 
-aiclient = create_openai_wrapper(api_key, proxy_url)
+# 正しい変数名 client で保持（ここがバグポイントでした）
+client = create_openai_wrapper(api_key, proxy_url)
 
 # -------------------------- 3) ポータブル資産パス ---------------------
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -139,7 +140,6 @@ try:
         key="file_uploader",
     )
 except StreamlitAPIException:
-    # セッションに古いファイルが残っていて type が変わった場合などに発生する
     st.session_state.pop("file_uploader", None)
     uploaded_file = st.sidebar.file_uploader(
         "テキスト / Markdown / PDF / Word",
@@ -202,14 +202,4 @@ def extract_text_from_docx(file_obj) -> str:
     try:
         doc = Document(bio)
         return "\n".join(p.text for p in doc.paragraphs)[:180_000]
-    except:  # noqa: E722
-        pass
-    try:
-        return docx2txt.process(bio)[:180_000]
-    except:  # noqa: E722
-        pass
-    return "(Word(.docx) から抽出できませんでした)"
-
-
-def extract_text_from_doc(file_obj) -> str:
-    data = file
+    except:  # noqa
