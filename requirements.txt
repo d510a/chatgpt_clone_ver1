@@ -1,12 +1,31 @@
-streamlit
-openai
-python-dotenv
-pdfminer.six
-PyPDF2
-PyMuPDF
-pdf2image
-pillow
-pytesseract
-python-docx
-mammoth
-docx2txt
+# ===== requirements.txt =====
+# --- Web UI & 環境 ---
+streamlit>=1.33
+python-dotenv>=1.0          # .env 読み込み
+
+# --- OpenAI API ---
+openai>=1.25                # v1 系（0.x を使う場合は <1.0 で固定）
+
+# --- Office / テキスト ---
+python-docx>=1.1            # docx 解析
+textract>=1.6               # 古い .doc 等のフォールバック
+
+# --- PDF 抽出 ---
+pdfminer.six>=20221105      # 第1候補
+PyPDF2>=4.0                 # 第2候補
+PyMuPDF>=1.24               # 第3候補（import 名は fitz）
+pdfplumber>=0.10            # 追加した第4候補
+
+# --- OCR ---
+pdf2image>=1.17             # PDF → 画像
+pytesseract>=0.3
+pillow>=9.5                 # pdf2image が内部で使用
+
+# --- そのほか ---
+# （標準ライブラリのみ: logging / re / typing など）
+
+# --------------------------------
+# 外部バイナリ（pip では入らない）のインストールも必須:
+# 1) Poppler（pdftocairo 等） … pdf2image の back-end
+# 2) Tesseract OCR（日本語言語データ jpn）
+# どちらも OS のパッケージマネージャーか公式 installer で追加してください。
