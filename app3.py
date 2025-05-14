@@ -1,6 +1,7 @@
 import os
-import logging
 import sys
+import json       # ★追加
+import logging
 import importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
@@ -9,27 +10,19 @@ import streamlit as st
 from dotenv import load_dotenv
 from docx import Document
 
-# 環境変数読み込み
+# ────────────── 環境変数 & ロギング ──────────────
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s ─ %(message)s")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s ─ %(message)s")
 
-# --- 認証情報読み込み ----------------------------------------------
-api_key = ""
-if "api_key" in st.secrets:
-    # Streamlit Secrets から API キーを取得
-    api_key = st.secrets["api_key"]
-else:
-    # .env から API キーを取得
-    api_key = os.getenv("API_KEY", "")
-
-# ページ設定
+api_key = st.secrets.get("api_key", os.getenv("API_KEY", ""))
 st.set_page_config(page_title="ChatGPT_clone")
 
 if not api_key:
     st.error("API キーが設定されていません。（Secrets または .env）")
     st.stop()
 
-# --- OpenAI v0/v1 互換ラッパー --------------------------------------
+# ────────────── OpenAI v0/v1 互換ラッパー ──────────────
 def detect_openai_v1() -> bool:
     try:
         return int(imd.version("openai").split(".")[0]) >= 1
@@ -57,9 +50,12 @@ class OpenAIWrapper:
 
     def stream_chat_completion(self, messages, model="o3-2025-04-16"):
         if self.v1:
-            return self.client.chat.completions.create(model=model, messages=messages, stream=True)
-        return self.client.ChatCompletion.create(model=model, messages=messages, stream=True)
-
+            return self.client.chat.completions.create(
+                model=model, messages=messages, stream=True
+            )
+        return self.client.ChatCompletion.create(
+            model=model, messages=messages, stream=True
+        )
 
 def create_openai_wrapper(api_key: str) -> OpenAIWrapper:
     wrapper = OpenAIWrapper(api_key)
@@ -74,7 +70,7 @@ def create_openai_wrapper(api_key: str) -> OpenAIWrapper:
 
 client = create_openai_wrapper(api_key)
 
-# --- セッション初期化 ----------------------------------------------
+# ────────────── セッション初期化 ──────────────
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 POPPLER_DIR = BASE_DIR / "poppler" / "bin"
 TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
@@ -86,10 +82,12 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
 st.session_state.setdefault("uploaded_files", {})
 
-# --- ファイル添付 & 抽出 -------------------------------------------
+# ────────────── ファイル添付 & 抽出 ──────────────
 st.sidebar.header("ファイルを添付")
 uploaded_file = st.sidebar.file_uploader(
-    "テキスト / PDF / Word", type=["txt", "md", "pdf", "docx", "doc"], accept_multiple_files=False
+    "テキスト / PDF / Word",
+    type=["txt", "md", "pdf", "docx", "doc"],
+    accept_multiple_files=False,
 )
 
 # 大文字 .PDF を非対応扱い
@@ -198,7 +196,7 @@ else:
             st.session_state.messages.append({"role": "user", "content": notice})
             st.sidebar.success("ファイルをチャットへ送信しました")
 
-# --- メッセージ描画 -----------------------------------------------
+# ────────────── メッセージ描画 ──────────────
 st.title("ChatGPT_clone_o3")
 st.caption("Streamlit + OpenAI")
 
@@ -208,14 +206,15 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# --- チャット入力 -----------------------------------------------
+# ────────────── チャット入力 & 応答 ──────────────
 if prompt := st.chat_input("ここにメッセージを入力"):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="o3-2025-04-16"
+        messages=st.session_state.messages,
+        model="o3-2025-04-16",
     )
 
     with st.chat_message("assistant"):
@@ -225,4 +224,9 @@ if prompt := st.chat_input("ここにメッセージを入力"):
             reply += (delta.get("content", "") if isinstance(delta, dict) else delta.content or "")
             placeholder.markdown(reply + "▌")
         placeholder.markdown(reply)
+
+        # ★★★ ここがコピーボタン相当 ★★★
+        # st.code() で応答全文をコードブロック表示 → 自動で「Copy」アイコンが付く
+        st.code(reply, language=None)
+
     st.session_state.messages.append({"role": "assistant", "content": reply})
