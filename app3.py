@@ -185,4 +185,71 @@ def extract_text_from_word(file_obj) -> str:
         text = "\n".join(para.text for para in doc.paragraphs)
         if text.strip():
             return text[:180_000]
-    except Exception
+    except Exception as e:
+        logging.warning(".docx 解析失敗: %s", e)
+
+    try:
+        import textract
+        file_obj.seek(0)
+        data = file_obj.read()
+        text = textract.process(data, extension="doc").decode(errors="ignore")
+        if text.strip():
+            return text[:180_000]
+    except Exception as e:
+        logging.warning(".doc 解析失敗: %s", e)
+
+    return "(Word ファイルからテキストを抽出できませんでした)"
+
+if uploaded_file:
+    if uploaded_file.name.endswith(".PDF"):
+        st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
+    else:
+        st.sidebar.write(f" **{uploaded_file.name}** ({uploaded_file.size//1024:,} KB) を読み込みました")
+        if uploaded_file.name not in st.session_state.uploaded_files:
+            if uploaded_file.type == "application/pdf":
+                content = extract_text_from_pdf(uploaded_file)
+            elif uploaded_file.name.lower().endswith((".docx", ".doc")):
+                content = extract_text_from_word(uploaded_file)
+            else:
+                content = read_text_file(uploaded_file)
+            st.session_state.uploaded_files[uploaded_file.name] = content
+
+        if st.sidebar.button("ファイル内容を送信"):
+            txt = st.session_state.uploaded_files[uploaded_file.name]
+            st.session_state.messages.append({"role": "system", "content": txt})
+            notice = f"ファイル **{uploaded_file.name}** を送信しました。"
+            st.session_state.messages.append({"role": "user", "content": notice})
+            st.sidebar.success("ファイルをチャットへ送信しました")
+
+# ---------------- メッセージ描画 -------------------------------------------------------
+st.title("ChatGPT_clone_o3")
+st.caption("Streamlit + OpenAI")
+
+for i, m in enumerate(st.session_state.messages):
+    if m["role"] == "system":
+        continue
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
+        if m["role"] == "assistant":
+            render_copy_button(m["content"], key=f"hist_{i}")
+
+# ---------------- チャット入力 --------------------------------------------------------
+if prompt := st.chat_input("ここにメッセージを入力"):
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    stream = client.stream_chat_completion(
+        messages=st.session_state.messages, model="o3-2025-04-16"
+    )
+
+    with st.chat_message("assistant"):
+        placeholder, reply = st.empty(), ""
+        for chunk in stream:
+            delta = chunk.choices[0].delta if hasattr(chunk.choices[0], "delta") else chunk.choices[0]
+            reply += (delta.get("content", "") if isinstance(delta, dict) else delta.content or "")
+            placeholder.markdown(reply + "▌")
+        placeholder.markdown(reply)
+        render_copy_button(reply, key=f"live_{len(st.session_state.messages)}")
+
+    st.session_state.messages.append({"role": "assistant", "content": reply})
