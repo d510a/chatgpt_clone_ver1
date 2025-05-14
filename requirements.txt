@@ -1,18 +1,11 @@
-# UI と設定
 streamlit
 python-dotenv
-
-# OpenAI API クライアント
 openai
-
-# Word / PDF 抽出
-python-docx          # .docx
-pdfminer.six         # 第1候補
-PyPDF2               # 第2候補
-PyMuPDF              # 第3候補（import 名: fitz）
-pdfplumber           # 追加の抽出エンジン
-
-# OCR 用
-pdf2image            # PDF → 画像
-pytesseract          # OCR 本体を呼び出すラッパー
-Pillow               # pdf2image が内部で使用
+python-docx
+pdfminer.six
+PyPDF2
+PyMuPDF
+pdfplumber
+pdf2image
+pytesseract
+Pillow
