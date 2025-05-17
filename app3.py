@@ -97,6 +97,8 @@ if uploaded_file and uploaded_file.name.endswith(".PDF"):
     st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
 else:
     def read_text_file(file):
+        """Read text from uploaded file reliably."""
+        file.seek(0)
         raw = file.read()
         for enc in ("utf-8", "cp932"):
             try:
