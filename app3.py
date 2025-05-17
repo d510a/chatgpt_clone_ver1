@@ -100,6 +100,7 @@ def read_text_file(file) -> str:
     return "(テキストの文字コード判定に失敗しました)"
 
 def extract_pdf(file) -> str:
+    file.seek(0)
     data = file.read()
     # 1) pdfminer.six
     try:
@@ -133,6 +134,7 @@ def extract_pdf(file) -> str:
     return "(PDF からテキストを抽出できませんでした)"
 
 def extract_word(file) -> str:
+    file.seek(0)
     data = file.read()
     try:
         from docx import Document
@@ -149,6 +151,22 @@ def extract_word(file) -> str:
             return clip_text(text)
     except Exception as e:
         logging.warning("docx2txt 失敗: %s", e)
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(BytesIO(data)) as z:
+            with z.open("word/document.xml") as fxml:
+                xml = fxml.read()
+        root = ET.fromstring(xml)
+        texts = []
+        for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"):
+            if node.text:
+                texts.append(node.text)
+        text = "\n".join(texts)
+        if text.strip():
+            return clip_text(text)
+    except Exception as e:
+        logging.warning("zipxml 失敗: %s", e)
     return "(Word ファイルからテキストを抽出できませんでした)"
 
 # -------- ファイルアップローダー ----------------------------------
