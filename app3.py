@@ -149,10 +149,13 @@ else:
         except Exception as e:
             logging.warning("pdfminer 失敗: %s", e)
 
-        # 2) PyPDF2
+        # 2) PyPDF2 / pypdf
         try:
-            import PyPDF2
-            reader = PyPDF2.PdfReader(BytesIO(data))
+            try:
+                import PyPDF2 as pypdf_mod
+            except Exception:
+                import pypdf as pypdf_mod
+            reader = pypdf_mod.PdfReader(BytesIO(data))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             if text.strip() and not looks_garbled(text):
                 return clip_text(text)
@@ -181,17 +184,42 @@ else:
         except Exception as e:
             logging.warning("OCR 失敗: %s", e)
 
+        # 5) naive fallback
+        try:
+            text = data.decode("utf-8")
+            if text.strip() and not looks_garbled(text):
+                return clip_text(text)
+        except Exception:
+            pass
+
         return "(PDF からテキストを抽出できませんでした)"
 
     def extract_text_from_word(file_obj) -> str:
         try:
             file_obj.seek(0)
+            from docx import Document
             doc = Document(file_obj)
             text = "\n".join(para.text for para in doc.paragraphs)
             if text.strip():
                 return clip_text(text)
         except Exception as e:
             logging.warning(".docx 解析失敗: %s", e)
+
+        # fallback using zipfile (no dependencies)
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            file_obj.seek(0)
+            with zipfile.ZipFile(file_obj) as z:
+                with z.open("word/document.xml") as f:
+                    tree = ET.parse(f)
+            root = tree.getroot()
+            texts = [t.text for t in root.iter() if t.tag.endswith("}t")]
+            text = "\n".join(filter(None, texts))
+            if text.strip():
+                return clip_text(text)
+        except Exception as e:
+            logging.warning("zip/docx fallback 失敗: %s", e)
 
         try:
             import textract
