@@ -11,3 +11,4 @@ docx2txt==0.9
 chardet==5.2.0
 # 以下はフォールバック用途 (任意)
 PyPDF2==3.0.1
+unidecode
