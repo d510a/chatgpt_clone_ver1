@@ -1,0 +1,4 @@
+[server]
+headless = true
+enableXsrfProtection = false   # Cloud 環境ではデフォルト false
+maxUploadSize = 2048           # MB 単位。必要に応じ調整
