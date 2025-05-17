@@ -86,18 +86,18 @@ def clip_text(text: str, char_limit=16_000, tok_limit=3_500) -> str:
 def read_text_file(file) -> str:
     file.seek(0)
     raw = file.read()
+    enc_guess = None
     try:
         import chardet
         enc_guess = chardet.detect(raw)["encoding"]  # type: ignore
-        if enc_guess:
-            return clip_text(raw.decode(enc_guess, errors="ignore"))
     except Exception:
         pass
-    # fallback: UTF-8 のみ
-    try:
-        return clip_text(raw.decode("utf-8"))
-    except UnicodeDecodeError:
-        return "(テキストの文字コード判定に失敗しました)"
+    for enc in filter(None, (enc_guess, "utf-8", "cp932", "shift_jis", "euc-jp")):
+        try:
+            return clip_text(raw.decode(enc, errors="ignore"))
+        except Exception:
+            continue
+    return "(テキストの文字コード判定に失敗しました)"
 
 def extract_pdf(file) -> str:
     data = file.read()
@@ -133,19 +133,18 @@ def extract_pdf(file) -> str:
     return "(PDF からテキストを抽出できませんでした)"
 
 def extract_word(file) -> str:
-    from docx import Document
+    data = file.read()
     try:
-        doc = Document(file)
+        from docx import Document
+        doc = Document(BytesIO(data))
         text = "\n".join(p.text for p in doc.paragraphs)
         if text.strip():
             return clip_text(text)
     except Exception as e:
         logging.warning("python-docx 失敗: %s", e)
-    # docx2txt fallback
     try:
         import docx2txt
-        file.seek(0)
-        text = docx2txt.process(BytesIO(file.read()))
+        text = docx2txt.process(BytesIO(data))
         if text.strip():
             return clip_text(text)
     except Exception as e:
