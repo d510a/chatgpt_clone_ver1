@@ -9,3 +9,4 @@ pdfplumber
 #pdf2image
 #pytesseract
 Pillow
+tiktoken
