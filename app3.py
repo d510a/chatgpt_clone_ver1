@@ -8,6 +8,10 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 from docx import Document
+try:
+    import tiktoken
+except Exception:
+    tiktoken = None
 
 # 環境変数読み込み
 load_dotenv()
@@ -82,11 +86,22 @@ TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
 GREETING = "質問してみましょう"
 # API の入力長制限を考慮した文字数上限
 MAX_TEXT_LEN = 16_000
+# 追加のトークン長制限 (安全マージン)
+MAX_TOKEN_LEN = 3500
 
 def clip_text(text: str, limit: int = MAX_TEXT_LEN) -> str:
     """Truncate text to avoid exceeding API context limits."""
     if len(text) > limit:
-        return text[:limit] + "\n...(truncated)"
+        text = text[:limit]
+        text += "\n...(truncated)"
+    if tiktoken:
+        try:
+            enc = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        except Exception:
+            enc = tiktoken.get_encoding("cl100k_base")
+        tokens = enc.encode(text)
+        if len(tokens) > MAX_TOKEN_LEN:
+            text = enc.decode(tokens[:MAX_TOKEN_LEN]) + "\n...(truncated)"
     return text
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
