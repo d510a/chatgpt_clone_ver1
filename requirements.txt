@@ -9,3 +9,4 @@ pdf2image
 pytesseract
 chardet            # 任意
 python-dotenv>=1.0.1
+openai_legacy
