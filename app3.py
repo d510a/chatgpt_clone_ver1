@@ -1,128 +1,96 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Streamlit アプリ: PDF / Word / テキストをアップロードし、内容を抽出して OpenAI ChatCompletion
-に送信します。
-- 400 Bad Request を防ぐためにトークン概算でチャンク分割
-- PDF は pdfminer → PyPDF2 → PyMuPDF → pdfplumber → OCR の順でテキスト抽出
-- Word (.docx) は python-docx で抽出
-- TXT はそのまま読み込み
-必要環境:
-  python -m pip install streamlit openai python-docx pdfminer.six PyPDF2 PyMuPDF pdfplumber pdf2image pytesseract python-dotenv
+Streamlit file-uploader → text extractor → API sender
 """
 
-from __future__ import annotations
-
-import os
-import sys
-import logging
+# == 基本ライブラリ ==========================================================
+import os, sys, logging, re
 from io import BytesIO
 from pathlib import Path
-import re
-from typing import Optional, List
+from typing import Optional
 
 import streamlit as st
 from dotenv import load_dotenv
-import openai
-from docx import Document
-import pdfplumber  # noqa: pip install pdfplumber
 
-# ==================================================
-# 環境変数 & OpenAI 初期化
-# --------------------------------------------------
+# 依存ライブラリ -------------------------------------------------------------
+import importlib.metadata as imd  # ← 元コードのまま
+import pdfplumber                 # pdf テキスト抽出
+import requests                   # API 送信
+from docx import Document         # Word 読み込み
+
+# OCR 系ライブラリ（requirements に追記済み）
+from pdf2image import convert_from_bytes
+import pytesseract
+import fitz                       # PyMuPDF
+import PyPDF2
+from pdfminer.high_level import extract_text as pdfminer_extract
+
+# == 設定 ===================================================================
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    st.error("OPENAI_API_KEY が設定されていません。 .env もしくは環境変数で設定してください。")
-    st.stop()
-openai.api_key = OPENAI_API_KEY
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-# ===== ログ設定 ====================================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s: %(message)s",
-    stream=sys.stderr,
-)
+# ★ 追加: アップロード最大サイズを 1 GB に拡大（MB 単位）
+st.set_option("server.maxUploadSize", 1024)
 
-# ===== 定数 ========================================
-TOKEN_LIMIT = 7_000           # 1 回の ChatCompletion への最大トークン（概算）
-CHUNK_MARGIN = 500            # system/assistant プロンプトに回す余裕トークン
-POPPLER_DIR = Path(os.getenv("POPPLER_DIR", "/usr/bin"))
+# 環境変数（バックエンド URL, OCR コマンド等）
+API_URL      = os.getenv("UPLOAD_API_URL", "https://example.com/upload")
+POPPLER_DIR  = Path(os.getenv("POPPLER_DIR", "/usr/bin"))
 TESSERACT_EXE = Path(os.getenv("TESSERACT_EXE", "/usr/bin/tesseract"))
 
-# ===== ガーベージ判定ユーティリティ =================
+# == ユーティリティ =========================================================
 CID_RE = re.compile(r"\(cid:\d+\)")
-REPLACEMENT_CHAR = "\uFFFD"  # '�'
+REPLACEMENT_CHAR = "\uFFFD"   # �
 
-
-def looks_garbled(text: str, threshold: float = 0.20) -> bool:
-    """PDF 抽出結果が文字化けしているか簡易判定"""
-    if not text or not text.strip():
+def looks_garbled(text: str, threshold: float = 0.10) -> bool:
+    if not text:
         return True
-    garbled_tokens = (
-        text.count(REPLACEMENT_CHAR)
-        + len(CID_RE.findall(text))
-    )
-    ratio = garbled_tokens / max(len(text), 1)
-    return ratio > threshold
-
+    garbled = text.count(REPLACEMENT_CHAR) + len(CID_RE.findall(text)) + text.count("�")
+    return garbled / max(len(text), 1) > threshold
 
 def clean_cid(text: str) -> str:
-    """(cid:123) を除去"""
     return CID_RE.sub("", text)
 
-# ===== PDF 抽出ロジック =============================
-
+# == PDF 抽出 ===============================================================
 def extract_with_pdfminer(bio: BytesIO) -> Optional[str]:
     try:
-        from pdfminer.high_level import extract_text
-        text = extract_text(bio)
-        return text
+        return pdfminer_extract(bio)
     except Exception as e:
         logging.warning("pdfminer 失敗: %s", e)
         return None
 
-
 def extract_with_pypdf2(bio: BytesIO) -> Optional[str]:
     try:
-        import PyPDF2
         reader = PyPDF2.PdfReader(bio)
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return "\n".join(p.extract_text() or "" for p in reader.pages)
     except Exception as e:
         logging.warning("PyPDF2 失敗: %s", e)
         return None
 
-
 def extract_with_pymupdf(data: bytes) -> Optional[str]:
     try:
-        import fitz  # PyMuPDF
         doc = fitz.open(stream=data, filetype="pdf")
         return "\n".join(p.get_text() for p in doc)
     except Exception as e:
         logging.warning("PyMuPDF 失敗: %s", e)
         return None
 
-
 def extract_with_pdfplumber(bio: BytesIO) -> Optional[str]:
     try:
         with pdfplumber.open(bio) as pdf:
-            text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-        return text
+            return "\n".join(p.extract_text() or "" for p in pdf.pages)
     except Exception as e:
         logging.warning("pdfplumber 失敗: %s", e)
         return None
 
-
 def ocr_with_tesseract(data: bytes) -> str:
     try:
-        from pdf2image import convert_from_bytes
-        import pytesseract
         pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
         pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
         return "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
     except Exception as e:
         logging.warning("OCR 失敗: %s", e)
         return ""
-
 
 def extract_text_from_pdf(file_obj) -> str:
     data = file_obj.read()
@@ -140,110 +108,73 @@ def extract_text_from_pdf(file_obj) -> str:
             logging.info("%s 成功", extractor.__name__)
             return clean_cid(text)[:180_000]
 
-    logging.info("全テキスト抽出手法が失敗 → OCR フォールバック")
+    logging.info("全テキスト抽出手法が失敗 → OCR にフォールバック")
     ocr_text = ocr_with_tesseract(data)
-    if ocr_text.strip():
-        return ocr_text[:180_000]
-    return "(PDF からテキストを抽出できませんでした)"
+    return ocr_text[:180_000] if ocr_text.strip() else "(PDF から抽出できませんでした)"
 
-# ===== Word 抽出 ====================================
-
+# == Word 抽出（★追加） ======================================================
 def extract_text_from_docx(file_obj) -> str:
-    try:
-        file_obj.seek(0)
-        doc = Document(BytesIO(file_obj.read()))
-        text = "\n".join(p.text for p in doc.paragraphs)
-        return text[:180_000] if text else ""
-    except Exception as e:
-        logging.warning("DOCX 失敗: %s", e)
-        return "(Word からテキストを抽出できませんでした)"
+    file_obj.seek(0)
+    doc = Document(file_obj)
+    return "\n".join(p.text for p in doc.paragraphs)[:180_000]
 
-# ===== TXT 読み込み =================================
-
+# == TXT 読み込み ===========================================================
 def extract_text_from_txt(file_obj) -> str:
-    try:
-        return file_obj.read().decode(errors="ignore")[:180_000]
-    except Exception:
-        file_obj.seek(0)
-        return file_obj.read().decode("shift_jis", errors="ignore")[:180_000]
+    file_obj.seek(0)
+    return file_obj.read().decode("utf-8", errors="ignore")[:180_000]
 
-# ===== トークン概算 & チャンク ======================
+# == 汎用ディスパッチ（★追加） =============================================
+def extract_text_generic(uploaded_file) -> str:
+    suffix = Path(uploaded_file.name).suffix.lower()
+    if suffix == ".pdf":
+        return extract_text_from_pdf(uploaded_file)
+    elif suffix == ".docx":
+        return extract_text_from_docx(uploaded_file)
+    elif suffix in (".txt", ".text"):
+        return extract_text_from_txt(uploaded_file)
+    else:
+        return "(未対応のファイル形式です)"
 
-def rough_token_len(txt: str) -> int:
-    """おおよそ 1 token ≒ 4 文字で概算"""
-    return max(len(txt) // 4, 1)
+# == API 送信（★追加） ======================================================
+def send_file_to_api(uploaded_file) -> dict:
+    """
+    Multipart/form-data でファイルを送信し JSON レスポンスを返す
+    """
+    files = {
+        "file": (uploaded_file.name, uploaded_file.getvalue(), 
+                 "application/octet-stream"),
+    }
+    resp = requests.post(API_URL, files=files, timeout=60)
+    resp.raise_for_status()
+    return resp.json()
 
+# == Streamlit UI ===========================================================
+st.title("ファイル添付＆送信デモ")
 
-def split_into_chunks(txt: str, limit: int = TOKEN_LIMIT) -> List[str]:
-    if rough_token_len(txt) <= limit:
-        return [txt]
-    chunks, buff = [], []
-    for line in txt.splitlines():
-        buff.append(line)
-        if rough_token_len("\n".join(buff)) > (limit - CHUNK_MARGIN):
-            chunks.append("\n".join(buff))
-            buff = []
-    if buff:
-        chunks.append("\n".join(buff))
-    return chunks
-
-# ===== OpenAI ChatCompletion ラッパ ==================
-
-def chat_completion(user_text: str, model: str = "gpt-4o-mini") -> str:
-    resp = openai.ChatCompletion.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "あなたは優秀な日本語アシスタントです。"},
-            {"role": "user", "content": user_text},
-        ],
-        temperature=0.2,
-    )
-    return resp.choices[0].message.content.strip()
-
-# ==================================================
-# Streamlit UI
-# --------------------------------------------------
-
-st.set_page_config(page_title="ファイル ChatGPT", layout="wide")
-st.title("📄 ファイルを ChatGPT で解析")
-
-with st.sidebar:
-    st.header("設定")
-    model = st.selectbox("モデル", ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"])  # お好みで追加
-    st.markdown("---")
-    st.caption("トークン上限を超える場合は自動でチャンクに分割します。")
-
-uploaded = st.file_uploader(
-    "PDF / Word / テキストを選択",
+uploaded_files = st.file_uploader(
+    "PDF / Word / TXT を選択（複数可）",
     type=["pdf", "docx", "txt"],
+    accept_multiple_files=True,
 )
 
-if uploaded:
-    suffix = Path(uploaded.name).suffix.lower()
-    with st.spinner("テキスト抽出中 …"):
-        if suffix == ".pdf":
-            extracted = extract_text_from_pdf(uploaded)
-        elif suffix == ".docx":
-            extracted = extract_text_from_docx(uploaded)
-        else:
-            extracted = extract_text_from_txt(uploaded)
+if uploaded_files:
+    for uf in uploaded_files:
+        st.subheader(f"プレビュー: {uf.name}")
+        text_preview = extract_text_generic(uf)
+        st.text_area(
+            label="抽出テキスト（先頭 4 000 字）",
+            value=text_preview[:4000],
+            height=200,
+        )
 
-    if not extracted or extracted.startswith("("):
-        st.error("テキストを抽出できませんでした。")
-        st.stop()
+    if st.button("📤 送信 / Upload"):
+        for uf in uploaded_files:
+            try:
+                result = send_file_to_api(uf)
+                st.success(f"{uf.name}: 送信成功 → {result}")
+            except Exception as e:
+                st.error(f"{uf.name}: 送信失敗 ({e})")
 
-    chunks = split_into_chunks(extracted)
-    st.success(f"{len(chunks)} チャンクに分割して送信します …")
-
-    for i, ck in enumerate(chunks, 1):
-        with st.spinner(f"ChatGPT ({i}/{len(chunks)}) 処理中 …"):
-            response = chat_completion(ck, model=model)
-        st.subheader(f"✅ チャンク {i}")
-        st.write(response)
-
-    st.download_button(
-        "抽出テキストをダウンロード",
-        data=extracted,
-        file_name=f"{Path(uploaded.name).stem}_extracted.txt",
-        mime="text/plain",
-    )
+st.sidebar.markdown("### 設定")
+st.sidebar.write(f"API_URL = `{API_URL}`")
+st.sidebar.write("`.streamlit/config.toml` で `server.maxUploadSize` を恒久設定できます。")
