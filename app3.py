@@ -80,6 +80,14 @@ POPPLER_DIR = BASE_DIR / "poppler" / "bin"
 TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
 
 GREETING = "質問してみましょう"
+# API の入力長制限を考慮した文字数上限
+MAX_TEXT_LEN = 16_000
+
+def clip_text(text: str, limit: int = MAX_TEXT_LEN) -> str:
+    """Truncate text to avoid exceeding API context limits."""
+    if len(text) > limit:
+        return text[:limit] + "\n...(truncated)"
+    return text
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
 if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.session_state.messages):
@@ -102,10 +110,10 @@ else:
         raw = file.read()
         for enc in ("utf-8", "cp932"):
             try:
-                return raw.decode(enc, errors="ignore")[:180_000]
+                return clip_text(raw.decode(enc, errors="ignore"))
             except UnicodeDecodeError:
                 continue
-        return raw.decode(errors="ignore")[:180_000]
+        return clip_text(raw.decode(errors="ignore"))
 
     def looks_garbled(text: str) -> bool:
         if not text:
@@ -122,7 +130,7 @@ else:
             from pdfminer.high_level import extract_text
             text = extract_text(bio)
             if text.strip() and not looks_garbled(text):
-                return text[:180_000]
+                return clip_text(text)
         except Exception as e:
             logging.warning("pdfminer 失敗: %s", e)
 
@@ -132,7 +140,7 @@ else:
             reader = PyPDF2.PdfReader(BytesIO(data))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             if text.strip() and not looks_garbled(text):
-                return text[:180_000]
+                return clip_text(text)
         except Exception as e:
             logging.warning("PyPDF2 失敗: %s", e)
 
@@ -142,7 +150,7 @@ else:
             doc = fitz.open(stream=data, filetype="pdf")
             text = "\n".join(page.get_text() for page in doc)
             if text.strip() and not looks_garbled(text):
-                return text[:180_000]
+                return clip_text(text)
         except Exception as e:
             logging.warning("PyMuPDF 失敗: %s", e)
 
@@ -154,7 +162,7 @@ else:
             pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
             ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
             if ocr_text.strip():
-                return ocr_text[:180_000]
+                return clip_text(ocr_text)
         except Exception as e:
             logging.warning("OCR 失敗: %s", e)
 
@@ -166,7 +174,7 @@ else:
             doc = Document(file_obj)
             text = "\n".join(para.text for para in doc.paragraphs)
             if text.strip():
-                return text[:180_000]
+                return clip_text(text)
         except Exception as e:
             logging.warning(".docx 解析失敗: %s", e)
 
@@ -176,7 +184,7 @@ else:
             data = file_obj.read()
             text = textract.process(data, extension="doc").decode(errors="ignore")
             if text.strip():
-                return text[:180_000]
+                return clip_text(text)
         except Exception as e:
             logging.warning(".doc 解析失敗: %s", e)
 
