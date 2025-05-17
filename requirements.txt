@@ -1,12 +1,10 @@
 streamlit
-python-dotenv
-openai
 python-docx
+docx2txt
+pdfplumber
 pdfminer.six
 PyPDF2
-PyMuPDF
-pdfplumber
+pymupdf
 pdf2image
 pytesseract
-Pillow
-tiktoken
+chardet            # 任意
