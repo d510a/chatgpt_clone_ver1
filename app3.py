@@ -95,6 +95,7 @@ if uploaded_file and uploaded_file.name.endswith(".PDF"):
     st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
 else:
     def read_text_file(file):
+        file.seek(0)
         raw = file.read()
         encodings = (
             "utf-8",
@@ -165,6 +166,15 @@ else:
                 return text[:180_000]
         except Exception as e:
             logging.warning(".docx 解析失敗: %s", e)
+
+        try:
+            import docx2txt
+            file_obj.seek(0)
+            text = docx2txt.process(file_obj)
+            if text.strip():
+                return text[:180_000]
+        except Exception as e:
+            logging.warning("docx2txt 解析失敗: %s", e)
 
         try:
             import textract

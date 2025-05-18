@@ -7,3 +7,5 @@ PyPDF2
 PyMuPDF
 pdfplumber
 Pillow
+docx2txt
+textract
