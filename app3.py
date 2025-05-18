@@ -76,8 +76,6 @@ client = create_openai_wrapper(api_key)
 
 # --- セッション初期化 ----------------------------------------------
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-POPPLER_DIR = BASE_DIR / "poppler" / "bin"
-TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
 
 GREETING = "質問してみましょう"
 if "messages" not in st.session_state:
@@ -144,17 +142,6 @@ else:
         except Exception as e:
             logging.warning("PyMuPDF 失敗: %s", e)
 
-        # 4) OCR – Poppler + Tesseract
-        try:
-            from pdf2image import convert_from_bytes
-            import pytesseract
-            pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
-            pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
-            ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
-            if ocr_text.strip():
-                return ocr_text[:180_000]
-        except Exception as e:
-            logging.warning("OCR 失敗: %s", e)
 
         return "(PDF からテキストを抽出できませんでした)"
 
