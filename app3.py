@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import streamlit as st
+import chardet
 from dotenv import load_dotenv
 from docx import Document
 
@@ -96,10 +97,28 @@ if uploaded_file and uploaded_file.name.endswith(".PDF"):
 else:
     def read_text_file(file):
         raw = file.read()
-        for enc in ("utf-8", "cp932"):
+        try:
+            guess = chardet.detect(raw)
+            if guess.get("encoding"):
+                return raw.decode(guess["encoding"], errors="ignore")[:180_000]
+        except Exception as e:
+            logging.warning("chardet failed: %s", e)
+
+        encodings = (
+            "utf-8",
+            "utf-8-sig",
+            "cp932",
+            "shift_jis",
+            "euc-jp",
+            "iso2022_jp",
+            "utf-16",
+            "utf-16-le",
+            "utf-16-be",
+        )
+        for enc in encodings:
             try:
-                return raw.decode(enc, errors="ignore")[:180_000]
-            except UnicodeDecodeError:
+                return raw.decode(enc)[:180_000]
+            except Exception:
                 continue
         return raw.decode(errors="ignore")[:180_000]
 
