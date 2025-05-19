@@ -1,4 +1,4 @@
 tesseract-ocr
 poppler-utils
 libmagic1
-antiword              # ← NEW .doc 抽出用
+antiword
