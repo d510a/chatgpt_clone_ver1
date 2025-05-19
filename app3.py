@@ -4,19 +4,24 @@ import logging
 import importlib.metadata as imd
 from io import BytesIO
 from pathlib import Path
+import tempfile
 
 import streamlit as st
 from dotenv import load_dotenv
-from docx import Document
+from docx import Document      # python-docx
 
-# ── 環境変数／ログ設定 ──────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# 環境変数／ログ設定
+# ────────────────────────────────────────────────────────────────
 load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s ─ %(message)s"
 )
 
-# ── 認証情報 ───────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# 認証情報
+# ────────────────────────────────────────────────────────────────
 api_key = st.secrets.get("api_key", os.getenv("API_KEY", ""))
 
 st.set_page_config(page_title="ChatGPT_clone")
@@ -24,7 +29,9 @@ if not api_key:
     st.error("API キーが設定されていません。（Secrets または .env）")
     st.stop()
 
-# ── OpenAI v0/v1 互換ラッパー ─────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# OpenAI v0/v1 互換ラッパー
+# ────────────────────────────────────────────────────────────────
 def detect_openai_v1() -> bool:
     try:
         return int(imd.version("openai").split(".")[0]) >= 1
@@ -73,7 +80,9 @@ def create_openai_wrapper(key: str) -> OpenAIWrapper:
 
 client = create_openai_wrapper(api_key)
 
-# ── セッション初期化 ──────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# セッション初期化
+# ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 POPPLER_DIR = BASE_DIR / "poppler" / "bin"
 TESSERACT_EXE = BASE_DIR / "tesseract" / "tesseract.exe"
@@ -85,7 +94,9 @@ if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.ses
     st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
 st.session_state.setdefault("uploaded_files", {})
 
-# ── ファイル添付 & 抽出 ───────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# ファイル添付 & 抽出
+# ────────────────────────────────────────────────────────────────
 st.sidebar.header("ファイルを添付")
 uploaded_file = st.sidebar.file_uploader(
     "テキスト / PDF / Word",
@@ -101,7 +112,7 @@ else:
     # --------- テキスト系 --------------------------------------------------
     def read_text_file(file) -> str:
         """プレーンテキスト／Markdownを安全に読み込む"""
-        file.seek(0)  # ←★ ここを追加：ポインタを先頭へ
+        file.seek(0)
         raw = file.read()
         for enc in ("utf-8", "cp932"):
             try:
@@ -126,6 +137,7 @@ else:
             from pdfminer.high_level import extract_text
             text = extract_text(bio)
             if text.strip() and not looks_garbled(text):
+                file_obj.seek(0)
                 return text[:180_000]
         except Exception as exc:
             logging.warning("pdfminer 失敗: %s", exc)
@@ -136,6 +148,7 @@ else:
             reader = PyPDF2.PdfReader(BytesIO(data))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             if text.strip() and not looks_garbled(text):
+                file_obj.seek(0)
                 return text[:180_000]
         except Exception as exc:
             logging.warning("PyPDF2 失敗: %s", exc)
@@ -146,6 +159,7 @@ else:
             doc = fitz.open(stream=data, filetype="pdf")
             text = "\n".join(page.get_text() for page in doc)
             if text.strip() and not looks_garbled(text):
+                file_obj.seek(0)
                 return text[:180_000]
         except Exception as exc:
             logging.warning("PyMuPDF 失敗: %s", exc)
@@ -158,33 +172,73 @@ else:
             pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
             ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
             if ocr_text.strip():
+                file_obj.seek(0)
                 return ocr_text[:180_000]
         except Exception as exc:
             logging.warning("OCR 失敗: %s", exc)
 
+        file_obj.seek(0)
         return "(PDF からテキストを抽出できませんでした)"
 
     # --------- Word -------------------------------------------------------
     def extract_text_from_word(file_obj) -> str:
-        try:
-            file_obj.seek(0)
-            doc = Document(file_obj)
-            text = "\n".join(para.text for para in doc.paragraphs)
-            if text.strip():
-                return text[:180_000]
-        except Exception as exc:
-            logging.warning(".docx 解析失敗: %s", exc)
+        """
+        .docx -> python-docx → mammoth → docx2txt
+        .doc  -> textract
+        """
+        suffix = Path(file_obj.name).suffix.lower()
 
+        # --- .docx --------------------------------------------------------
+        if suffix == ".docx":
+            # 1) python-docx
+            try:
+                file_obj.seek(0)
+                doc = Document(file_obj)
+                text = "\n".join(p.text for p in doc.paragraphs)
+                if text.strip():
+                    file_obj.seek(0)
+                    return text[:180_000]
+            except Exception as exc:
+                logging.warning(".docx 解析失敗 (python-docx): %s", exc)
+
+            # 2) mammoth
+            try:
+                import mammoth
+                file_obj.seek(0)
+                result = mammoth.extract_raw_text(file_obj)
+                text = result.value
+                if text.strip():
+                    file_obj.seek(0)
+                    return text[:180_000]
+            except Exception as exc:
+                logging.warning(".docx 解析失敗 (mammoth): %s", exc)
+
+            # 3) docx2txt (要一時ファイル)
+            try:
+                import docx2txt
+                file_obj.seek(0)
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+                    tmp.write(file_obj.read())
+                    tmp.flush()
+                    text = docx2txt.process(tmp.name)
+                if text.strip():
+                    file_obj.seek(0)
+                    return text[:180_000]
+            except Exception as exc:
+                logging.warning(".docx 解析失敗 (docx2txt): %s", exc)
+
+        # --- .doc (バイナリ) ---------------------------------------------
         try:
             import textract
             file_obj.seek(0)
-            data = file_obj.read()
-            text = textract.process(data, extension="doc").decode(errors="ignore")
+            text = textract.process(file_obj, extension="doc").decode(errors="ignore")
             if text.strip():
+                file_obj.seek(0)
                 return text[:180_000]
         except Exception as exc:
-            logging.warning(".doc 解析失敗: %s", exc)
+            logging.warning(".doc 解析失敗 (textract): %s", exc)
 
+        file_obj.seek(0)
         return "(Word ファイルからテキストを抽出できませんでした)"
 
     # --------- UI & セッション保存 ----------------------------------------
@@ -213,7 +267,9 @@ else:
             st.session_state.messages.append({"role": "user", "content": notice})
             st.sidebar.success("ファイルをチャットへ送信しました")
 
-# ── チャット表示 ─────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# チャット表示
+# ────────────────────────────────────────────────────────────────
 st.title("ChatGPT_clone_o3")
 st.caption("Streamlit + OpenAI")
 
@@ -223,7 +279,9 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# ── チャット入力 ─────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────
+# チャット入力
+# ────────────────────────────────────────────────────────────────
 if prompt := st.chat_input("ここにメッセージを入力"):
     with st.chat_message("user"):
         st.markdown(prompt)
