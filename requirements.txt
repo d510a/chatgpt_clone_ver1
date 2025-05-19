@@ -1,11 +1,24 @@
-streamlit==1.45.1
-python-dotenv
-openai
-python-docx
-pdfminer.six
-PyPDF2
-PyMuPDF
-pdfplumber
-Pillow
-docx2txt
-textract
+# ── core ───────────────────────────
+streamlit==1.33.0
+python-dotenv==1.0.1
+openai==1.24.0
+
+# ── Word (.docx / .doc) ─────────────
+python-docx==0.8.11
+mammoth==1.6.0
+docx2txt==0.8
+textract==1.6.6
+python-magic-bin==0.4.14        # Linux/Mac の場合は python-magic
+
+# ── PDF 解析 ───────────────────────
+pdfminer.six==20221105
+PyPDF2==3.0.1
+PyMuPDF==1.23.7
+pdf2image==1.16.3
+
+# ── OCR ────────────────────────────
+pytesseract==0.3.10
+Pillow==10.2.0                  # pdf2image / pytesseract 依存
+
+# ── 依存解決用 ─────────────────────
+lxml==5.2.1                     # python-docx が内部で使用
