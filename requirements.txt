@@ -7,14 +7,12 @@ openai==1.24.0
 python-docx==0.8.11
 mammoth==1.6.0
 docx2txt==0.8
-textract==1.6.5                     # ← 1.6.6 からダウングレード
-
-# python-magic: Linux⇢python-magic / Windows⇢python-magic-bin
+textract==1.6.5                     # ← keep
 python-magic==0.4.27                ; sys_platform != "win32"
 python-magic-bin==0.4.14            ; sys_platform == "win32"
 
 # ── PDF 解析 ───────────────────────────────
-pdfminer.six==20221105
+pdfminer.six==20191110              # ← textract と揃えた
 PyPDF2==3.0.1
 PyMuPDF==1.23.7
 pdf2image==1.16.3
@@ -23,5 +21,5 @@ pdf2image==1.16.3
 pytesseract==0.3.10
 Pillow==10.2.0
 
-# ── 依存解決 ───────────────────────────────
-lxml==5.2.1                          # python-docx が内部で使用
+# ── dependency for python-docx ─────────────
+lxml==5.2.1
