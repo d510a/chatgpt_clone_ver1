@@ -116,10 +116,10 @@ else:
         raw = file.read()
         for enc in ("utf-8", "cp932"):
             try:
-                return raw.decode(enc, errors="ignore")[:180_000]
+                return raw.decode(enc, errors="ignore")[:990_000]
             except UnicodeDecodeError:
                 continue
-        return raw.decode(errors="ignore")[:180_000]
+        return raw.decode(errors="ignore")[:990_000]
 
     def looks_garbled(text: str) -> bool:
         if not text:
@@ -138,7 +138,7 @@ else:
             text = extract_text(bio)
             if text.strip() and not looks_garbled(text):
                 file_obj.seek(0)
-                return text[:180_000]
+                return text[:990_000]
         except Exception as exc:
             logging.warning("pdfminer 失敗: %s", exc)
 
@@ -149,7 +149,7 @@ else:
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
             if text.strip() and not looks_garbled(text):
                 file_obj.seek(0)
-                return text[:180_000]
+                return text[:990_000]
         except Exception as exc:
             logging.warning("PyPDF2 失敗: %s", exc)
 
@@ -160,7 +160,7 @@ else:
             text = "\n".join(page.get_text() for page in doc)
             if text.strip() and not looks_garbled(text):
                 file_obj.seek(0)
-                return text[:180_000]
+                return text[:990_000]
         except Exception as exc:
             logging.warning("PyMuPDF 失敗: %s", exc)
 
@@ -173,7 +173,7 @@ else:
             ocr_text = "\n".join(pytesseract.image_to_string(p, lang="jpn") for p in pages)
             if ocr_text.strip():
                 file_obj.seek(0)
-                return ocr_text[:180_000]
+                return ocr_text[:990_000]
         except Exception as exc:
             logging.warning("OCR 失敗: %s", exc)
 
@@ -197,7 +197,7 @@ else:
                 text = "\n".join(p.text for p in doc.paragraphs)
                 if text.strip():
                     file_obj.seek(0)
-                    return text[:180_000]
+                    return text[:990_000]
             except Exception as exc:
                 logging.warning(".docx 解析失敗 (python-docx): %s", exc)
 
@@ -209,7 +209,7 @@ else:
                 text = result.value
                 if text.strip():
                     file_obj.seek(0)
-                    return text[:180_000]
+                    return text[:990_000]
             except Exception as exc:
                 logging.warning(".docx 解析失敗 (mammoth): %s", exc)
 
@@ -223,7 +223,7 @@ else:
                     text = docx2txt.process(tmp.name)
                 if text.strip():
                     file_obj.seek(0)
-                    return text[:180_000]
+                    return text[:990_000]
             except Exception as exc:
                 logging.warning(".docx 解析失敗 (docx2txt): %s", exc)
 
@@ -234,7 +234,7 @@ else:
             text = textract.process(file_obj, extension="doc").decode(errors="ignore")
             if text.strip():
                 file_obj.seek(0)
-                return text[:180_000]
+                return text[:990_000]
         except Exception as exc:
             logging.warning(".doc 解析失敗 (textract): %s", exc)
 
