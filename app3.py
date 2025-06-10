@@ -170,7 +170,7 @@ else:
             import pytesseract
             pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
             pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
-            ocr_text = "\n".join(pytesseract.image_to_string(p, lang="en") for p in pages)
+            ocr_text = "\n".join(pytesseract.image_to_string(p, lang="eng") for p in pages)
             if ocr_text.strip():
                 file_obj.seek(0)
                 return ocr_text[:990_000]
