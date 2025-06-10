@@ -58,7 +58,7 @@ class OpenAIWrapper:
     def list_models(self):
         return self.client.models.list() if self.v1 else self.client.Model.list()
 
-    def stream_chat_completion(self, messages, model: str = "o3-2025-04-16"):
+    def stream_chat_completion(self, messages, model: str = "gpt-4.1-2025-04-14"):
         if self.v1:
             return self.client.chat.completions.create(
                 model=model, messages=messages, stream=True
