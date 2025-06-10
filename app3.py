@@ -288,7 +288,7 @@ if prompt := st.chat_input("ここにメッセージを入力"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="o3-2025-04-16"
+        messages=st.session_state.messages, model="gpt-4.1-2025-04-14"
     )
 
     with st.chat_message("assistant"):
