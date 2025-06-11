@@ -58,7 +58,7 @@ class OpenAIWrapper:
     def list_models(self):
         return self.client.models.list() if self.v1 else self.client.Model.list()
 
-    def stream_chat_completion(self, messages, model: str = "o3-pro-2025-06-10"):
+    def stream_chat_completion(self, messages, model: str = "o3-2025-04-16"):
         if self.v1:
             return self.client.chat.completions.create(
                 model=model, messages=messages, stream=True
@@ -288,7 +288,7 @@ if prompt := st.chat_input("ここにメッセージを入力"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="o3-pro-2025-06-10"
+        messages=st.session_state.messages, model="o3-2025-04-16"
     )
 
     with st.chat_message("assistant"):
