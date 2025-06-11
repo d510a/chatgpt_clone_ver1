@@ -23,7 +23,7 @@ Pillow==10.2.0
 
 # ── dependency for python-docx ─────────────
 lxml==5.2.1
-httpx==0.27.0          # 0.28 以上は proxies 引数が無い
-numpy==2.0.0             # pandas-2.3 が前提にする ABI に合わせる
+httpx==0.27.0          
+numpy==2.0.0             
 pandas==2.3.0
 six==1.16.0
