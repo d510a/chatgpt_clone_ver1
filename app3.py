@@ -270,7 +270,7 @@ else:
 # ────────────────────────────────────────────────────────────────
 # チャット表示
 # ────────────────────────────────────────────────────────────────
-st.title("ChatGPT_clone_o3pro")
+st.title("ChatGPT_clone_o3")
 st.caption("Streamlit + OpenAI")
 
 for m in st.session_state.messages:
