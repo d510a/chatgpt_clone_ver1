@@ -1,5 +1,5 @@
 tesseract-ocr
-tesseract-ocr-eng   # ← 追加
+tesseract-ocr-eng
 poppler-utils
 libmagic1
 antiword
