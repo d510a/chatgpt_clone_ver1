@@ -1,5 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント
+PDF OCR（英語専用）を安定化・高精度化するための改訂版
+"""
 import os
 import sys
+import shutil
 import logging
 import importlib.metadata as imd
 from io import BytesIO
@@ -8,7 +14,7 @@ import tempfile
 
 import streamlit as st
 from dotenv import load_dotenv
-from docx import Document      # python-docx
+from docx import Document  # python-docx
 
 # ────────────────────────────────────────────────────────────────
 # 環境変数／ログ設定
@@ -23,8 +29,8 @@ logging.basicConfig(
 # 認証情報
 # ────────────────────────────────────────────────────────────────
 api_key = st.secrets.get("api_key", os.getenv("API_KEY", ""))
-
 st.set_page_config(page_title="ChatGPT_clone")
+
 if not api_key:
     st.error("API キーが設定されていません。（Secrets または .env）")
     st.stop()
@@ -38,11 +44,13 @@ def detect_openai_v1() -> bool:
     except Exception:
         return False
 
+
 _IS_V1 = detect_openai_v1()
 if _IS_V1:
     from openai import OpenAI
 else:
     import openai as _openai_legacy  # noqa: N812  pylint: disable=invalid-name
+
 
 class OpenAIWrapper:
     def __init__(self, api_key: str):
@@ -67,6 +75,7 @@ class OpenAIWrapper:
             model=model, messages=messages, stream=True
         )
 
+
 def create_openai_wrapper(key: str) -> OpenAIWrapper:
     wrapper = OpenAIWrapper(key)
     try:
@@ -77,6 +86,7 @@ def create_openai_wrapper(key: str) -> OpenAIWrapper:
         logging.error("OpenAI 接続に失敗: %s", exc)
         st.error("OpenAI への接続に失敗しました。")
         st.stop()
+
 
 client = create_openai_wrapper(api_key)
 
@@ -108,7 +118,6 @@ uploaded_file = st.sidebar.file_uploader(
 if uploaded_file and uploaded_file.name.endswith(".PDF"):
     st.sidebar.error("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet files are not allowed.")
 else:
-
     # --------- テキスト系 --------------------------------------------------
     def read_text_file(file) -> str:
         """プレーンテキスト／Markdownを安全に読み込む"""
@@ -129,6 +138,12 @@ else:
 
     # --------- PDF --------------------------------------------------------
     def extract_text_from_pdf(file_obj) -> str:
+        """
+        1) pdfminer.six
+        2) PyPDF2
+        3) PyMuPDF
+        4) OCR – Poppler + Tesseract（英語専用）
+        """
         data = file_obj.read()
         bio = BytesIO(data)
 
@@ -168,12 +183,33 @@ else:
         try:
             from pdf2image import convert_from_bytes
             import pytesseract
-            pages = convert_from_bytes(data, dpi=300, fmt="png", poppler_path=str(POPPLER_DIR))
-            pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_EXE)
-            ocr_text = "\n".join(pytesseract.image_to_string(p, lang="eng") for p in pages)
+
+            # --- Poppler / Tesseract パス解決 ---------------------------------
+            poppler_path = str(POPPLER_DIR) if POPPLER_DIR.exists() else None
+            pytesseract.pytesseract.tesseract_cmd = (
+                str(TESSERACT_EXE)
+                if TESSERACT_EXE.exists()
+                else shutil.which("tesseract") or "tesseract"
+            )
+
+            # --- 画像へ変換（高解像度 / PNG）-----------------------------------
+            pages = convert_from_bytes(
+                data,
+                dpi=400,
+                fmt="png",
+                poppler_path=poppler_path,
+            )
+
+            # --- OCR 実行（英語専用・精度優先設定）-------------------------------
+            ocr_config = "--oem 3 --psm 6 -l eng"
+            ocr_text = "\n".join(
+                pytesseract.image_to_string(img, config=ocr_config) for img in pages
+            )
+
             if ocr_text.strip():
                 file_obj.seek(0)
                 return ocr_text[:990_000]
+
         except Exception as exc:
             logging.warning("OCR 失敗: %s", exc)
 
@@ -213,7 +249,7 @@ else:
             except Exception as exc:
                 logging.warning(".docx 解析失敗 (mammoth): %s", exc)
 
-            # 3) docx2txt (要一時ファイル)
+            # 3) docx2txt
             try:
                 import docx2txt
                 file_obj.seek(0)
