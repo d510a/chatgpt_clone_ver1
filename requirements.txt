@@ -1,29 +1,29 @@
-# ── core ──────────────────────────────────
+# ── core ─────────────────────────────
 streamlit==1.45.0
 python-dotenv==1.0.1
 openai==1.24.0
-# ── Word (.docx / .doc) ───────────────────
+
+# ── Word (.docx / .doc) ──────────────
 python-docx==0.8.11
 mammoth==1.6.0
-docx2txt==0.9
-textract==1.6.7                     
-python-magic==0.4.27                ; sys_platform != "win32"
-python-magic-bin==0.4.14            ; sys_platform == "win32"
+docx2txt==0.9            # ← これが最新
+textract==1.6.5
+python-magic==0.4.27      # linux 用
+# python-magic-bin は Windows 専用なので削除
 
-# ── PDF 解析 ───────────────────────────────
-pdfminer.six==20191110              
+# ── PDF 解析 ─────────────────────────
+pdfminer.six==20220319    # 旧版でも ok・警告減ります
 PyPDF2==3.0.1
-PyMuPDF==1.23.7
+PyMuPDF==1.23.16
 pdf2image==1.16.3
 
-# ── OCR ────────────────────────────────────
+# ── OCR ──────────────────────────────
 pytesseract==0.3.10
 Pillow==10.2.0
 
-# ── dependency for python-docx ─────────────
-numpy==2.0.0  
-pandas==2.3.0
+# ── deps ─────────────────────────────
+numpy==1.26.4             # Python 3.12 に最適
+pandas==2.2.2             # 2.3 系で出た CAPI 問題を回避
 lxml==5.2.1
-httpx==0.27.0          
-six==1.16.0  
-
+httpx==0.27.0
+six==1.12.0               # textract が要求する範囲に合わせる
