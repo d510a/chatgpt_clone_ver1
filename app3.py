@@ -58,7 +58,7 @@ class OpenAIWrapper:
     def list_models(self):
         return self.client.models.list() if self.v1 else self.client.Model.list()
 
-    def stream_chat_completion(self, messages, model: str = "gpt-4.1-2025-04-14"):
+    def stream_chat_completion(self, messages, model: str = "o3-pro-2025-06-10"):
         if self.v1:
             return self.client.chat.completions.create(
                 model=model, messages=messages, stream=True
@@ -270,7 +270,7 @@ else:
 # ────────────────────────────────────────────────────────────────
 # チャット表示
 # ────────────────────────────────────────────────────────────────
-st.title("ChatGPT_clone_gpt4.1")
+st.title("ChatGPT_clone_o3pro")
 st.caption("Streamlit + OpenAI")
 
 for m in st.session_state.messages:
@@ -288,7 +288,7 @@ if prompt := st.chat_input("ここにメッセージを入力"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     stream = client.stream_chat_completion(
-        messages=st.session_state.messages, model="gpt-4.1-2025-04-14"
+        messages=st.session_state.messages, model="o3-pro-2025-06-10"
     )
 
     with st.chat_message("assistant"):
