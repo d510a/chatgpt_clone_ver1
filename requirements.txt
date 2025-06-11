@@ -6,7 +6,7 @@ openai==1.24.0
 python-docx==0.8.11
 mammoth==1.6.0
 docx2txt==0.9
-textract==1.6.5                     
+textract==1.6.7                     
 python-magic==0.4.27                ; sys_platform != "win32"
 python-magic-bin==0.4.14            ; sys_platform == "win32"
 
@@ -25,5 +25,5 @@ numpy==2.0.0
 pandas==2.3.0
 lxml==5.2.1
 httpx==0.27.0          
-six==1.12.0  
+six==1.16.0  
 
