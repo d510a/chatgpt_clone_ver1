@@ -6,7 +6,7 @@ openai==1.24.0
 # ── Word (.docx / .doc) ───────────────────
 python-docx==0.8.11
 mammoth==1.6.0
-docx2txt==1.1   
+docx2txt==0.9
 textract==1.6.5                     
 python-magic==0.4.27                ; sys_platform != "win32"
 python-magic-bin==0.4.14            ; sys_platform == "win32"
