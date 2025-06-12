@@ -13,6 +13,7 @@ python-docx==0.8.11
 mammoth==1.6.0
 docx2txt==0.9
 python-magic==0.4.27
+pdf2image==1.17.0
 
 # ==== データ処理 ===
 numpy==1.26.4
