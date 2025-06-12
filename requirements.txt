@@ -14,7 +14,7 @@ mammoth==1.6.0
 docx2txt==0.9
 python-magic==0.4.27
 
-# ==== データ処理 ====
+# ==== データ処理 ===
 numpy==1.26.4
 pandas==2.2.2
 lxml==5.2.1
