@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント 
+ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント
 PDF OCR（英語専用）を高精度化し、バージョン不一致エラーを解消したフルコード；
 """
 
