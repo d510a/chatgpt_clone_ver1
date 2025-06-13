@@ -27,3 +27,4 @@ altair<6,>=4.0
 tornado<7,>=6.0.3
 watchdog<7,>=2.1.5
 gitpython!=3.1.19,<4,>=3.0.7
+chardet==5.2.0  
