@@ -78,7 +78,7 @@ class OpenAIWrapper:
     def stream_chat_completion(
         self,
         messages,
-        model: Literal["o3-2025-04-16", "gpt-4.1-2025-04-14"] = "o3-2025-04-16",
+        model: Literal["o3-2025-04-16", "gpt-4.1-2025-04-14"] = "gpt-4.1-2025-04-14",
     ):
         if self.v1:
             return self.client.chat.completions.create(
