@@ -351,7 +351,7 @@ st.sidebar.selectbox(
 # ② ファイルアップロード
 st.sidebar.header("ファイル添付")
 uploaded_file = st.sidebar.file_uploader(
-    type=["txt", "md", "pdf", "docx", "doc"],
+"",    type=["txt", "md", "pdf", "docx", "doc"],
     accept_multiple_files=False,
 )
 
