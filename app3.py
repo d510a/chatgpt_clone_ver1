@@ -383,7 +383,7 @@ else:
                 content = "(ファイル解析中にエラーが発生しました)"
             st.session_state.uploaded_files[uploaded_file.name] = content
 
-        if st.sidebar.button("ファイル内容を送信"):
+        if st.sidebar.button("ファイルを送信"):
             txt = st.session_state.uploaded_files[uploaded_file.name]
             st.session_state.messages.append({"role": "system", "content": txt})
             notice = f"ファイル **{uploaded_file.name}** を送信しました。"
@@ -392,7 +392,7 @@ else:
 
 # ③ リセットボタン（必ずファイル送信ボタンの下に表示）
 st.sidebar.divider()
-st.sidebar.button("チャットをリセット", on_click=reset_chat)
+st.sidebar.button("リセット", on_click=reset_chat)
 
 # ────────────────────────────────────────────────────────────────
 # チャット表示
