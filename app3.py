@@ -397,8 +397,8 @@ st.sidebar.button("リセット", on_click=reset_chat)
 # ────────────────────────────────────────────────────────────────
 # チャット表示
 # ────────────────────────────────────────────────────────────────
-st.title("ChatGPT_clone_o3")
-st.caption("Streamlit + OpenAI")
+st.title("ChatGPT_clone")
+
 
 for m in st.session_state.messages:
     if m["role"] == "system":
