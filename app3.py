@@ -343,7 +343,7 @@ st.sidebar.header("設定")
 # ① モデル選択
 st.sidebar.selectbox(
     "モデル選択",
-    ("o3-2025-04-16", "gpt-4.1-2025-04-14"),
+    ("o3", "gpt-4.1"),
     key="model_name",
     help="回答に使用する OpenAI モデルを切り替えます"
 )
