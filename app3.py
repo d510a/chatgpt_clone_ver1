@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント  
+ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント
 PDF OCR（英語専用）を高精度化し、バージョン不一致エラーを解消したフルコード；
+モデル切替 UI とリセットボタンを追加
 """
-
 # ────────────────────────────────────────────────────────────────
 # 標準ライブラリ
 # ────────────────────────────────────────────────────────────────
@@ -16,6 +16,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import traceback
+from typing import Literal
 
 # ────────────────────────────────────────────────────────────────
 # 外部パッケージ
@@ -74,7 +75,11 @@ class OpenAIWrapper:
     def list_models(self):
         return self.client.models.list() if self.v1 else self.client.Model.list()
 
-    def stream_chat_completion(self, messages, model: str = "o3-2025-04-16"):
+    def stream_chat_completion(
+        self,
+        messages,
+        model: Literal["o3-2025-04-16", "gpt-4.1-2025-04-14"] = "o3-2025-04-16",
+    ):
         if self.v1:
             return self.client.chat.completions.create(
                 model=model,
@@ -135,16 +140,25 @@ TESSERACT_CMD = resolve_tesseract_cmd()
 # ────────────────────────────────────────────────────────────────
 # セッション初期化
 # ────────────────────────────────────────────────────────────────
-GREETING = "質問してみましょう"
+DEFAULT_GREETING = "質問してみましょう"
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
-if not any(m["role"] == "assistant" and m["content"] == GREETING for m in st.session_state.messages):
-    st.session_state.messages.insert(1, {"role": "assistant", "content": GREETING})
+if not any(m["role"] == "assistant" and m["content"] == DEFAULT_GREETING
+           for m in st.session_state.messages):
+    st.session_state.messages.insert(1, {"role": "assistant", "content": DEFAULT_GREETING})
 st.session_state.setdefault("uploaded_files", {})
+st.session_state.setdefault("model_name", "o3-2025-04-16")
 
 # ────────────────────────────────────────────────────────────────
 # 共通ユーティリティ
 # ────────────────────────────────────────────────────────────────
+def reset_chat() -> None:
+    """チャット履歴とアップロード済み内容を完全にリセット"""
+    st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."},
+                                 {"role": "assistant", "content": DEFAULT_GREETING}]
+    st.session_state.uploaded_files = {}
+    st.sidebar.success("チャットをリセットしました")
+
 def read_text_file(file) -> str:
     """プレーンテキスト／Markdownを安全に読み込む"""
     file.seek(0)
@@ -321,10 +335,20 @@ def extract_text_from_word(file_obj) -> str:
     file_obj.seek(0)
     return "(Word ファイルからテキストを抽出できませんでした)"
 
+# ────────────────────────────────────────────────────────────────
+# サイドバー：モデル選択・ファイル添付・リセット
+# ────────────────────────────────────────────────────────────────
+st.sidebar.header("設定")
 
-# ────────────────────────────────────────────────────────────────
-# サイドバー：ファイル添付 & セッション保存
-# ────────────────────────────────────────────────────────────────
+# ① モデル選択
+st.sidebar.selectbox(
+    "モデル選択",
+    ("o3-2025-04-16", "gpt-4.1-2025-04-14"),
+    key="model_name",
+    help="回答に使用する OpenAI モデルを切り替えます"
+)
+
+# ② ファイルアップロード
 st.sidebar.header("ファイルを添付")
 uploaded_file = st.sidebar.file_uploader(
     "テキスト / PDF / Word",
@@ -366,6 +390,10 @@ else:
             st.session_state.messages.append({"role": "user", "content": notice})
             st.sidebar.success("ファイルをチャットへ送信しました")
 
+# ③ リセットボタン（必ずファイル送信ボタンの下に表示）
+st.sidebar.divider()
+st.sidebar.button("チャットをリセット", on_click=reset_chat)
+
 # ────────────────────────────────────────────────────────────────
 # チャット表示
 # ────────────────────────────────────────────────────────────────
@@ -388,7 +416,7 @@ if prompt := st.chat_input("ここにメッセージを入力"):
 
     stream = client.stream_chat_completion(
         messages=st.session_state.messages,
-        model="o3-2025-04-16",
+        model=st.session_state["model_name"],  # <-- 選択したモデルを利用
     )
 
     with st.chat_message("assistant"):
