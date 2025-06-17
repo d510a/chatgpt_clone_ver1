@@ -147,7 +147,7 @@ if not any(m["role"] == "assistant" and m["content"] == DEFAULT_GREETING
            for m in st.session_state.messages):
     st.session_state.messages.insert(1, {"role": "assistant", "content": DEFAULT_GREETING})
 st.session_state.setdefault("uploaded_files", {})
-st.session_state.setdefault("model_name", "o3-2025-04-16")
+st.session_state.setdefault("model_name", "gpt-4.1-2025-04-14")
 
 # ────────────────────────────────────────────────────────────────
 # 共通ユーティリティ
