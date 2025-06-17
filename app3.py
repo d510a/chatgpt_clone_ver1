@@ -152,7 +152,7 @@ TESSERACT_CMD = resolve_tesseract_cmd()
 # ────────────────────────────────────────────────────────────────
 # セッション初期化
 # ────────────────────────────────────────────────────────────────
-DEFAULT_GREETING = "質問してみましょう"
+DEFAULT_GREETING = "質問してみましょう。"
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": "You are a helpful assistant."}]
 if not any(m["role"] == "assistant" and m["content"] == DEFAULT_GREETING
