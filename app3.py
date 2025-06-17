@@ -44,6 +44,14 @@ if not api_key:
     st.stop()
 
 # ────────────────────────────────────────────────────────────────
+# ★ UI ラベル → OpenAI モデル ID 変換表
+# ────────────────────────────────────────────────────────────────
+MODEL_NAME_TO_ID = {
+    "o3": "o3-2025-04-16",
+    "GPT-4.1": "gpt-4.1-2025-04-14",
+}
+
+# ────────────────────────────────────────────────────────────────
 # OpenAI v0/v1 互換ラッパー
 # ────────────────────────────────────────────────────────────────
 def detect_openai_v1() -> bool:
@@ -78,7 +86,11 @@ class OpenAIWrapper:
     def stream_chat_completion(
         self,
         messages,
-        model: Literal["o3-2025-04-16", "gpt-4.1-2025-04-14"] = "gpt-4.1-2025-04-14",
+        # ★ デフォルトを GPT-4.1 に変更
+        model: Literal[
+            "o3-2025-04-16",
+            "gpt-4.1-2025-04-14"
+        ] = "gpt-4.1-2025-04-14",
     ):
         if self.v1:
             return self.client.chat.completions.create(
@@ -147,7 +159,8 @@ if not any(m["role"] == "assistant" and m["content"] == DEFAULT_GREETING
            for m in st.session_state.messages):
     st.session_state.messages.insert(1, {"role": "assistant", "content": DEFAULT_GREETING})
 st.session_state.setdefault("uploaded_files", {})
-st.session_state.setdefault("model_name", "gpt-4.1-2025-04-14")
+# ★ デフォルト値を GPT-4.1（大文字表記）に
+st.session_state.setdefault("model_name", "GPT-4.1")
 
 # ────────────────────────────────────────────────────────────────
 # 共通ユーティリティ
@@ -343,7 +356,7 @@ st.sidebar.header("設定")
 # ① モデル選択
 st.sidebar.selectbox(
     "モデル選択",
-    ("o3", "gpt-4.1"),
+    list(MODEL_NAME_TO_ID.keys()),          # ★ ラベル一覧
     key="model_name",
     help="回答に使用する OpenAI モデルを切り替えます"
 )
@@ -351,7 +364,7 @@ st.sidebar.selectbox(
 # ② ファイルアップロード
 st.sidebar.header("ファイル添付")
 uploaded_file = st.sidebar.file_uploader(
-"",    type=["txt", "md", "pdf", "docx", "doc"],
+    "", type=["txt", "md", "pdf", "docx", "doc"],
     accept_multiple_files=False,
 )
 
@@ -398,7 +411,6 @@ st.sidebar.button("リセット", on_click=reset_chat)
 # ────────────────────────────────────────────────────────────────
 st.title("ChatGPT_clone")
 
-
 for m in st.session_state.messages:
     if m["role"] == "system":
         continue
@@ -413,9 +425,13 @@ if prompt := st.chat_input("ここにメッセージを入力"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
+    # ★ UI ラベル → OpenAI モデル ID へ変換
+    model_id = MODEL_NAME_TO_ID.get(st.session_state["model_name"],
+                                    st.session_state["model_name"])
+
     stream = client.stream_chat_completion(
         messages=st.session_state.messages,
-        model=st.session_state["model_name"],  # <-- 選択したモデルを利用
+        model=model_id,  # <-- OpenAI に渡すのはフル ID
     )
 
     with st.chat_message("assistant"):
