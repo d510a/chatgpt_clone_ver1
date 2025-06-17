@@ -18,7 +18,7 @@ pdf2image==1.17.0
 # ==== データ処理 ===
 numpy==1.26.4
 pandas==2.2.2
-lxml>=5.3.0,<5.5
+lxml==5.2.1
 httpx==0.27.0
 six==1.16.0               # “moves” 問題を修正
 
@@ -28,5 +28,3 @@ tornado<7,>=6.0.3
 watchdog<7,>=2.1.5
 gitpython!=3.1.19,<4,>=3.0.7
 chardet==5.2.0  
-duckduckgo-search==8.0.4
-
