@@ -2,7 +2,7 @@
 """
 ChatGPT_clone_o3 ― Streamlit + OpenAI クライアント
 PDF OCR（英語専用）を高精度化し、バージョン不一致エラーを解消したフルコード；
-モデル切替 UI・リセットボタン・Web 検索機能を追加
+モデル切替 UI とリセットボタンを追加
 """
 # ────────────────────────────────────────────────────────────────
 # 標準ライブラリ
@@ -16,7 +16,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import traceback
-from typing import Literal, List, Dict
+from typing import Literal
 
 # ────────────────────────────────────────────────────────────────
 # 外部パッケージ
@@ -24,13 +24,6 @@ from typing import Literal, List, Dict
 import streamlit as st
 from dotenv import load_dotenv
 from docx import Document  # python-docx
-
-# Web 検索（duckduckgo_search が無い場合は警告を出して無効化）
-try:
-    from duckduckgo_search import DDGS  # pip install duckduckgo_search
-    _DUCKDUCKGO_AVAILABLE = True
-except Exception:                       # duckduckgo_search 未導入でも動くように
-    _DUCKDUCKGO_AVAILABLE = False
 
 # ────────────────────────────────────────────────────────────────
 # 環境変数／ログ設定
@@ -127,44 +120,6 @@ def create_openai_wrapper(key: str) -> OpenAIWrapper:
 client = create_openai_wrapper(api_key)
 
 # ────────────────────────────────────────────────────────────────
-# Web 検索ユーティリティ
-# ────────────────────────────────────────────────────────────────
-def search_web(query: str, num_results: int = 5) -> List[Dict[str, str]]:
-    """
-    DuckDuckGo で簡易検索して {title, url, snippet} を返す。
-    duckduckgo_search が無い場合は空配列。
-    """
-    if not _DUCKDUCKGO_AVAILABLE:
-        logging.warning("duckduckgo_search 未導入: Web 検索をスキップします")
-        return []
-
-    results: List[Dict[str, str]] = []
-    try:
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, region="wt-wt", safesearch="moderate"):
-                if len(results) >= num_results:
-                    break
-                results.append({
-                    "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", "")
-                })
-    except Exception as exc:
-        logging.warning("Web 検索失敗: %s", exc)
-
-    return results
-
-def format_search_results(results: List[Dict[str, str]]) -> str:
-    """検索結果を LLM へ渡しやすい Markdown テキストへ整形"""
-    if not results:
-        return ""
-    lines = ["### Web 検索結果（上位）"]
-    for i, r in enumerate(results, 1):
-        title = r['title'] or r['url']
-        lines.append(f"{i}. **{title}** — {r['snippet']} ({r['url']})")
-    return "\n".join(lines)
-
-# ────────────────────────────────────────────────────────────────
 # 実行環境パスの解決
 # ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))  # PyInstaller 対応
@@ -206,8 +161,6 @@ if not any(m["role"] == "assistant" and m["content"] == DEFAULT_GREETING
 st.session_state.setdefault("uploaded_files", {})
 # ★ デフォルト値を GPT-4.1（大文字表記）に
 st.session_state.setdefault("model_name", "GPT-4.1")
-# ★ Web 検索トグル
-st.session_state.setdefault("use_web_search", False)
 
 # ────────────────────────────────────────────────────────────────
 # 共通ユーティリティ
@@ -396,7 +349,7 @@ def extract_text_from_word(file_obj) -> str:
     return "(Word ファイルからテキストを抽出できませんでした)"
 
 # ────────────────────────────────────────────────────────────────
-# サイドバー：モデル選択・ファイル添付・リセット・Web検索
+# サイドバー：モデル選択・ファイル添付・リセット
 # ────────────────────────────────────────────────────────────────
 st.sidebar.header("設定")
 
@@ -408,15 +361,7 @@ st.sidebar.selectbox(
     help="回答に使用する OpenAI モデルを切り替えます"
 )
 
-# ② Web 検索トグル
-st.sidebar.checkbox(
-    "Web 検索を使用する",
-    key="use_web_search",
-    help="チャット送信前に最新情報を検索し、結果も参照して回答します",
-    disabled=not _DUCKDUCKGO_AVAILABLE
-)
-
-# ③ ファイルアップロード
+# ② ファイルアップロード
 st.sidebar.header("ファイル添付")
 uploaded_file = st.sidebar.file_uploader(
     "", type=["txt", "md", "pdf", "docx", "doc"],
@@ -457,7 +402,7 @@ else:
             st.session_state.messages.append({"role": "user", "content": notice})
             st.sidebar.success("ファイルをチャットへ送信しました")
 
-# ④ リセットボタン（必ずファイル送信ボタンの下に表示）
+# ③ リセットボタン（必ずファイル送信ボタンの下に表示）
 st.sidebar.divider()
 st.sidebar.button("リセット", on_click=reset_chat)
 
@@ -484,27 +429,8 @@ if prompt := st.chat_input("ここにメッセージを入力"):
     model_id = MODEL_NAME_TO_ID.get(st.session_state["model_name"],
                                     st.session_state["model_name"])
 
-    # ---- Web 検索を実行（必要なら） ---------------------------------
-    messages_to_send = list(st.session_state.messages)  # shallow copy
-    if st.session_state.get("use_web_search", False):
-        search_results = search_web(prompt, num_results=5)
-        formatted = format_search_results(search_results)
-        if formatted:
-            # LLM へも提示
-            messages_to_send.insert(
-                1,
-                {
-                    "role": "system",
-                    "content": formatted + "\n\n必要に応じて参照して回答してください。"
-                }
-            )
-            # ユーザー UI にも検索結果を表示
-            with st.chat_message("system"):
-                st.markdown(formatted)
-
-    # ---- OpenAI へストリーミング ------------------------------------
     stream = client.stream_chat_completion(
-        messages=messages_to_send,
+        messages=st.session_state.messages,
         model=model_id,  # <-- OpenAI に渡すのはフル ID
     )
 
